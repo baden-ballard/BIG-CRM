@@ -1,0 +1,489 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import GlassCard from '../../../components/GlassCard';
+import GlassButton from '../../../components/GlassButton';
+import { supabase } from '../../../lib/supabase';
+
+interface Group {
+  id: string;
+  name: string;
+  initial_contact_date: string | null;
+  lead_source: string | null;
+  from_who: string | null;
+  pipeline_status: string | null;
+  status_change_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Participant {
+  id: string;
+  group_id: string | null;
+  client_name: string;
+  dob: string | null;
+  address: string | null;
+  phone_number: string | null;
+  email_address: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export default function GroupDetailPage() {
+  const router = useRouter();
+  const params = useParams();
+  const groupId = params.id as string;
+
+  const [group, setGroup] = useState<Group | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [originalPipelineStatus, setOriginalPipelineStatus] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    initial_contact_date: '',
+    lead_source: '',
+    from_who: '',
+    pipeline_status: '',
+    status_change_notes: '',
+  });
+  const [loading, setLoading] = useState(true);
+  const [loadingParticipants, setLoadingParticipants] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (groupId) {
+      fetchGroup();
+      fetchParticipants();
+    } else {
+      setError('Group ID is missing');
+      setLoading(false);
+      setLoadingParticipants(false);
+    }
+  }, [groupId]);
+
+  const fetchGroup = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      if (!groupId) {
+        throw new Error('Group ID is required');
+      }
+
+      const { data, error: fetchError } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('id', groupId)
+        .single();
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      if (!data) {
+        throw new Error('Group not found');
+      }
+
+      setGroup(data);
+      setOriginalPipelineStatus(data.pipeline_status);
+      setFormData({
+        name: data.name || '',
+        initial_contact_date: formatDate(data.initial_contact_date),
+        lead_source: data.lead_source || '',
+        from_who: data.from_who || '',
+        pipeline_status: data.pipeline_status || '',
+        status_change_notes: '',
+      });
+    } catch (err: any) {
+      console.error('Error fetching group:', err);
+      setError(err.message || 'Failed to load group');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchParticipants = async () => {
+    try {
+      setLoadingParticipants(true);
+
+      if (!groupId) {
+        return;
+      }
+
+      const { data, error: fetchError } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('group_id', groupId)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      setParticipants(data || []);
+    } catch (err: any) {
+      console.error('Error fetching participants:', err);
+    } finally {
+      setLoadingParticipants(false);
+    }
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toISOString().split('T')[0]; // Format as YYYY-MM-DD for date inputs
+  };
+
+  const formatDisplayDate = (dateString: string | null) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: value,
+      };
+      // Clear status_change_notes if pipeline_status is cleared or set back to original
+      if (name === 'pipeline_status') {
+        if (!value || value === originalPipelineStatus) {
+          updated.status_change_notes = '';
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      if (!groupId) {
+        throw new Error('Group ID is required');
+      }
+
+      // Prepare data for update
+      const updateData: any = {
+        name: formData.name,
+      };
+
+      // Add optional fields only if they have values
+      if (formData.initial_contact_date) {
+        updateData.initial_contact_date = formData.initial_contact_date;
+      } else {
+        updateData.initial_contact_date = null;
+      }
+      if (formData.lead_source) {
+        updateData.lead_source = formData.lead_source;
+      } else {
+        updateData.lead_source = null;
+      }
+      if (formData.from_who) {
+        updateData.from_who = formData.from_who;
+      } else {
+        updateData.from_who = null;
+      }
+      if (formData.pipeline_status) {
+        updateData.pipeline_status = formData.pipeline_status;
+      } else {
+        updateData.pipeline_status = null;
+      }
+      
+      // Only include status_change_notes if pipeline status was changed
+      const pipelineStatusChanged = formData.pipeline_status !== originalPipelineStatus;
+      if (pipelineStatusChanged && formData.status_change_notes) {
+        updateData.status_change_notes = formData.status_change_notes;
+      } else if (pipelineStatusChanged) {
+        updateData.status_change_notes = null;
+      }
+
+      // Update group in database
+      const { data, error: updateError } = await supabase
+        .from('groups')
+        .update(updateData)
+        .eq('id', groupId)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Update local state
+      setGroup(data);
+      setOriginalPipelineStatus(data.pipeline_status);
+      setFormData(prev => ({
+        ...prev,
+        status_change_notes: '', // Clear after successful save
+      }));
+
+      // Refresh participants list
+      fetchParticipants();
+
+      alert('Group updated successfully!');
+    } catch (err: any) {
+      console.error('Error updating group:', err);
+      alert('Failed to update group. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Check if pipeline status is being changed
+  const isPipelineStatusChanging = formData.pipeline_status !== originalPipelineStatus && 
+                                    formData.pipeline_status !== '';
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <GlassCard>
+          <p className="text-[var(--glass-gray-medium)] text-center py-8">
+            Loading group...
+          </p>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  if (error || !group) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <GlassCard>
+          <p className="text-red-500 text-center py-8">
+            {error || 'Group not found'}
+          </p>
+          <div className="flex justify-center mt-4">
+            <GlassButton variant="primary" onClick={() => router.push('/groups')}>
+              Back to Groups
+            </GlassButton>
+          </div>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="mb-8">
+        <button
+          onClick={() => router.push('/groups')}
+          className="text-[var(--glass-secondary)] hover:text-[var(--glass-secondary-dark)] mb-4 flex items-center gap-2"
+        >
+          <span>←</span> Back to Groups
+        </button>
+        <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
+          Group Details
+        </h1>
+        <p className="text-[var(--glass-gray-medium)]">
+          View and edit group information
+        </p>
+      </div>
+
+      <GlassCard>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Group Name */}
+          <div>
+            <label htmlFor="name" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+              Group Name *
+            </label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              required
+              value={formData.name}
+              onChange={handleChange}
+              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+            />
+          </div>
+
+          {/* Initial Contact Date */}
+          <div>
+            <label htmlFor="initial_contact_date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+              Initial Contact Date
+            </label>
+            <input
+              type="date"
+              id="initial_contact_date"
+              name="initial_contact_date"
+              value={formData.initial_contact_date}
+              onChange={handleChange}
+              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+            />
+          </div>
+
+          {/* Lead Source */}
+          <div>
+            <label htmlFor="lead_source" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+              Lead Source
+            </label>
+            <select
+              id="lead_source"
+              name="lead_source"
+              value={formData.lead_source}
+              onChange={handleChange}
+              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+            >
+              <option value="">Select lead source</option>
+              <option value="Prospecting">Prospecting</option>
+              <option value="Walk In">Walk In</option>
+              <option value="Referral">Referral</option>
+            </select>
+          </div>
+
+          {/* From Who */}
+          <div>
+            <label htmlFor="from_who" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+              From Who
+            </label>
+            <input
+              type="text"
+              id="from_who"
+              name="from_who"
+              value={formData.from_who}
+              onChange={handleChange}
+              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+              placeholder="Person who prospected/referred"
+            />
+          </div>
+
+          {/* Participants Section */}
+          <div className="pt-6 border-t border-white/20">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                Participants
+              </h2>
+              <GlassButton
+                variant="primary"
+                onClick={() => router.push(`/participants/new?group_id=${groupId}`)}
+              >
+                + Add Participant
+              </GlassButton>
+            </div>
+
+            {loadingParticipants ? (
+              <p className="text-[var(--glass-gray-medium)] text-center py-4">
+                Loading participants...
+              </p>
+            ) : participants.length === 0 ? (
+              <p className="text-[var(--glass-gray-medium)] text-center py-4">
+                No Participants
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {participants.map((participant) => (
+                  <div
+                    key={participant.id}
+                    className="glass-card rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer"
+                    onClick={() => router.push(`/participants/${participant.id}`)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-[var(--glass-black-dark)] mb-1">
+                          {participant.client_name}
+                        </h3>
+                        <div className="flex flex-wrap gap-4 text-sm text-[var(--glass-gray-medium)]">
+                          {participant.email_address && (
+                            <span>{participant.email_address}</span>
+                          )}
+                          {participant.phone_number && (
+                            <span>{participant.phone_number}</span>
+                          )}
+                          {participant.dob && (
+                            <span>DOB: {formatDisplayDate(participant.dob)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Sales Status Section */}
+          <div className="pt-6 border-t border-white/20">
+            <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-6">
+              Sales Status
+            </h2>
+            
+            <div className="space-y-6">
+              {/* Pipeline Status */}
+              <div>
+                <label htmlFor="pipeline_status" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Pipeline Status
+                </label>
+                <select
+                  id="pipeline_status"
+                  name="pipeline_status"
+                  value={formData.pipeline_status}
+                  onChange={handleChange}
+                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                >
+                  <option value="">Select pipeline status</option>
+                  <option value="Meeting Set">Meeting Set</option>
+                  <option value="Waiting On Decision">Waiting On Decision</option>
+                  <option value="Won">Won</option>
+                  <option value="Lost">Lost</option>
+                </select>
+              </div>
+
+              {/* Status Change Notes - Only show when pipeline status is being changed */}
+              {isPipelineStatusChanging && (
+                <div>
+                  <label htmlFor="status_change_notes" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Status Change Notes
+                  </label>
+                  <textarea
+                    id="status_change_notes"
+                    name="status_change_notes"
+                    value={formData.status_change_notes}
+                    onChange={handleChange}
+                    rows={4}
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl resize-none"
+                    placeholder="Add any notes about this status change..."
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Metadata */}
+          <div className="pt-4 border-t border-white/20 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-[var(--glass-gray-medium)]">Created:</span>
+              <span className="text-[var(--glass-black-dark)]">{formatDisplayDate(group.created_at)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-[var(--glass-gray-medium)]">Last Updated:</span>
+              <span className="text-[var(--glass-black-dark)]">{formatDisplayDate(group.updated_at)}</span>
+            </div>
+          </div>
+
+          {/* Form Actions */}
+          <div className="flex items-center justify-end gap-4 pt-4 border-t border-white/20">
+            <button
+              type="button"
+              onClick={() => router.push('/groups')}
+              className="px-6 py-3 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300"
+            >
+              Cancel
+            </button>
+            <GlassButton
+              type="submit"
+              variant="primary"
+              disabled={isSubmitting}
+              className={isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
+            >
+              {isSubmitting ? 'Saving...' : 'Save Changes'}
+            </GlassButton>
+          </div>
+        </form>
+      </GlassCard>
+    </div>
+  );
+}
