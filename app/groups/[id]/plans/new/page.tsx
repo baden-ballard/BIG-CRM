@@ -37,14 +37,12 @@ export default function NewPlanPage() {
 
   const [programs, setPrograms] = useState<Program[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [filteredProviders, setFilteredProviders] = useState<Provider[]>([]);
   const [groupName, setGroupName] = useState<string>('');
   const [loadingPrograms, setLoadingPrograms] = useState(false);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [loadingGroup, setLoadingGroup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newOptions, setNewOptions] = useState<Array<{ id: string; option: string; rate: string }>>([]);
-  const [showAddOptionForm, setShowAddOptionForm] = useState(false);
   const [showCsvUploadModal, setShowCsvUploadModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvRateStartDate, setCsvRateStartDate] = useState('');
@@ -56,15 +54,6 @@ export default function NewPlanPage() {
     fetchPrograms();
     fetchProviders();
   }, [groupId]);
-
-  useEffect(() => {
-    // Filter providers based on selected program
-    if (formData.program_id) {
-      filterProvidersByProgram(formData.program_id);
-    } else {
-      setFilteredProviders([]);
-    }
-  }, [formData.program_id]);
 
   const fetchGroup = async () => {
     try {
@@ -158,31 +147,6 @@ export default function NewPlanPage() {
     }
   };
 
-  const filterProvidersByProgram = async (programId: string) => {
-    try {
-      // Get providers associated with this program
-      const { data: programProviders, error } = await supabase
-        .from('program_providers')
-        .select('provider_id')
-        .eq('program_id', programId);
-
-      if (error) {
-        throw error;
-      }
-
-      if (!programProviders || programProviders.length === 0) {
-        setFilteredProviders([]);
-        return;
-      }
-
-      const providerIds = programProviders.map((pp: any) => pp.provider_id);
-      const filtered = providers.filter(p => providerIds.includes(p.id));
-      setFilteredProviders(filtered);
-    } catch (error) {
-      console.error('Error filtering providers:', error);
-      setFilteredProviders([]);
-    }
-  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -190,29 +154,16 @@ export default function NewPlanPage() {
       ...prev,
       [name]: value,
     }));
-    // Clear spouse/child values if switching away from Age Banded plan type
-    if (name === 'plan_type' && value !== 'Age Banded') {
-      setFormData(prev => ({
-        ...prev,
-        employer_spouse_contribution_value: '',
-        employer_child_contribution_value: '',
-      }));
-    }
   };
 
   const handleAddOption = () => {
     const newId = `temp-${Date.now()}-${Math.random()}`;
     setNewOptions([...newOptions, { id: newId, option: '', rate: '' }]);
-    setShowAddOptionForm(true);
   };
 
   const handleRemoveOption = (id: string) => {
     const updatedOptions = newOptions.filter(opt => opt.id !== id);
     setNewOptions(updatedOptions);
-    // Hide form if no more options
-    if (updatedOptions.length === 0) {
-      setShowAddOptionForm(false);
-    }
   };
 
   const handleOptionChange = (id: string, field: 'option' | 'rate', value: string) => {
@@ -359,16 +310,6 @@ export default function NewPlanPage() {
       return;
     }
 
-    if (!formData.plan_type || (formData.plan_type !== 'Composite' && formData.plan_type !== 'Age Banded')) {
-      alert('Plan type must be Composite or Age Banded to upload rates');
-      return;
-    }
-
-    if (!formData.effective_date) {
-      alert('Please set an effective date for the plan first');
-      return;
-    }
-
     setIsUploadingRates(true);
 
     try {
@@ -399,7 +340,6 @@ export default function NewPlanPage() {
       }
 
       setNewOptions([...newOptions, ...newOptionsFromFile]);
-      setShowAddOptionForm(true);
 
       // Close modal and reset state
       setShowCsvUploadModal(false);
@@ -634,22 +574,14 @@ export default function NewPlanPage() {
                 onChange={handleChange}
                 required
                 className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                disabled={loadingProviders || !formData.program_id}
+                disabled={loadingProviders}
               >
                 <option value="">Select provider</option>
-                {formData.program_id ? (
-                  filteredProviders.length > 0 ? (
-                    filteredProviders.map((provider) => (
-                      <option key={provider.id} value={provider.id}>
-                        {provider.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="" disabled>No providers available for selected program</option>
-                  )
-                ) : (
-                  <option value="" disabled>Please select a program first</option>
-                )}
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -747,64 +679,12 @@ export default function NewPlanPage() {
               </select>
             </div>
 
-            {/* Conditional Contribution Fields */}
-            {formData.plan_type === 'Age Banded' ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                {/* Employer Employee Contribution Value */}
-                <div className="flex flex-col">
-                  <label htmlFor="employer_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
-                    Employer Employee Contribution Value
-                  </label>
-                  <input
-                    type="number"
-                    id="employer_contribution_value"
-                    name="employer_contribution_value"
-                    value={formData.employer_contribution_value}
-                    onChange={handleChange}
-                    step="0.01"
-                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                    placeholder="Enter employee contribution"
-                  />
-                </div>
-
-                {/* Employer Spouse Contribution Value */}
-                <div className="flex flex-col">
-                  <label htmlFor="employer_spouse_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
-                    Employer Spouse Contribution Value
-                  </label>
-                  <input
-                    type="number"
-                    id="employer_spouse_contribution_value"
-                    name="employer_spouse_contribution_value"
-                    value={formData.employer_spouse_contribution_value}
-                    onChange={handleChange}
-                    step="0.01"
-                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                    placeholder="Enter spouse contribution"
-                  />
-                </div>
-
-                {/* Employer Child Contribution Value */}
-                <div className="flex flex-col">
-                  <label htmlFor="employer_child_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
-                    Employer Child Contribution Value
-                  </label>
-                  <input
-                    type="number"
-                    id="employer_child_contribution_value"
-                    name="employer_child_contribution_value"
-                    value={formData.employer_child_contribution_value}
-                    onChange={handleChange}
-                    step="0.01"
-                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                    placeholder="Enter child contribution"
-                  />
-                </div>
-              </div>
-            ) : formData.employer_contribution_type ? (
-              <div>
-                <label htmlFor="employer_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                  Employer Contribution Value
+            {/* Employer Contribution Fields - Always Visible */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+              {/* Employer Employee Contribution Value */}
+              <div className="flex flex-col">
+                <label htmlFor="employer_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
+                  Employer Employee Contribution Value
                 </label>
                 <input
                   type="number"
@@ -814,10 +694,44 @@ export default function NewPlanPage() {
                   onChange={handleChange}
                   step="0.01"
                   className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                  placeholder="Enter contribution value"
+                  placeholder="Enter employee contribution"
                 />
               </div>
-            ) : null}
+
+              {/* Employer Spouse Contribution Value */}
+              <div className="flex flex-col">
+                <label htmlFor="employer_spouse_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
+                  Employer Spouse Contribution Value
+                </label>
+                <input
+                  type="number"
+                  id="employer_spouse_contribution_value"
+                  name="employer_spouse_contribution_value"
+                  value={formData.employer_spouse_contribution_value}
+                  onChange={handleChange}
+                  step="0.01"
+                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                  placeholder="Enter spouse contribution"
+                />
+              </div>
+
+              {/* Employer Child Contribution Value */}
+              <div className="flex flex-col">
+                <label htmlFor="employer_child_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
+                  Employer Child Contribution Value
+                </label>
+                <input
+                  type="number"
+                  id="employer_child_contribution_value"
+                  name="employer_child_contribution_value"
+                  value={formData.employer_child_contribution_value}
+                  onChange={handleChange}
+                  step="0.01"
+                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                  placeholder="Enter child contribution"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Plan Options Section */}
@@ -831,17 +745,11 @@ export default function NewPlanPage() {
                   variant="primary"
                   type="button"
                   onClick={() => {
-                    if (formData.plan_type !== 'Composite' && formData.plan_type !== 'Age Banded') {
-                      alert('Please select a plan type (Composite or Age Banded) first');
-                      return;
-                    }
                     // Set default start date when opening modal
                     const defaultDate = formData.effective_date || new Date().toISOString().split('T')[0];
                     setCsvRateStartDate(defaultDate);
                     setShowCsvUploadModal(true);
                   }}
-                  disabled={formData.plan_type !== 'Composite' && formData.plan_type !== 'Age Banded'}
-                  className={formData.plan_type !== 'Composite' && formData.plan_type !== 'Age Banded' ? 'opacity-50 cursor-not-allowed' : ''}
                 >
                   Add Rates
                 </GlassButton>
@@ -858,7 +766,7 @@ export default function NewPlanPage() {
             </div>
 
             {/* New Options Form Section */}
-            {showAddOptionForm && newOptions.length > 0 && (
+            {newOptions.length > 0 && (
               <div className="mb-6 space-y-4">
                 {newOptions.map((newOption) => (
                   <div
@@ -869,31 +777,29 @@ export default function NewPlanPage() {
                       <div className="flex items-center gap-4">
                         <div className="flex-1">
                           <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                            {formData.plan_type === 'Age Banded' ? 'Age' : 'Plan Option'}
+                            Plan Option
                           </label>
                           <input
                             type="text"
                             value={newOption.option}
                             onChange={(e) => handleOptionChange(newOption.id, 'option', e.target.value)}
                             className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                            placeholder={`Enter ${formData.plan_type === 'Age Banded' ? 'age' : 'plan option'}`}
+                            placeholder="Enter plan option"
                           />
                         </div>
-                        {(formData.plan_type === 'Composite' || formData.plan_type === 'Age Banded') && (
-                          <div className="flex-1">
-                            <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                              Rate *
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={newOption.rate}
-                              onChange={(e) => handleOptionChange(newOption.id, 'rate', e.target.value)}
-                              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                              placeholder="Enter rate"
-                            />
-                          </div>
-                        )}
+                        <div className="flex-1">
+                          <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                            Rate
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={newOption.rate}
+                            onChange={(e) => handleOptionChange(newOption.id, 'rate', e.target.value)}
+                            className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                            placeholder="Enter rate"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={() => handleRemoveOption(newOption.id)}
@@ -944,7 +850,7 @@ export default function NewPlanPage() {
               Upload Rates from File
             </h3>
             <p className="text-[var(--glass-gray-medium)] mb-6 text-sm text-center">
-              Upload a CSV or Excel file (.xlsx, .xls) with {formData.plan_type === 'Age Banded' ? 'Ages' : 'Options'} and Rates. 
+              Upload a CSV or Excel file (.xlsx, .xls) with Options and Rates. 
               The options and rates will be added to the form.
             </p>
             
@@ -954,7 +860,7 @@ export default function NewPlanPage() {
                   File (CSV or Excel) *
                 </label>
                 <p className="text-xs text-[var(--glass-gray-medium)] mb-2">
-                  Format: {formData.plan_type === 'Age Banded' ? 'Age' : 'Option'}, Rate (or Price)
+                  Format: Option, Rate (or Price)
                 </p>
                 <input
                   type="file"
