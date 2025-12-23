@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import GlassCard from '../../../components/GlassCard';
 import GlassButton from '../../../components/GlassButton';
 import { supabase } from '../../../lib/supabase';
 
-export default function NewParticipantPage() {
+function NewParticipantPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const groupId = searchParams.get('group_id');
@@ -725,4 +725,10 @@ export default function NewParticipantPage() {
   );
 }
 
-
+export default function NewParticipantPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <NewParticipantPageContent />
+    </Suspense>
+  );
+}
