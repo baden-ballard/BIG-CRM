@@ -106,7 +106,7 @@ export default function GroupsPage() {
     }
   };
 
-  const searchFields = useMemo(() => ['name', 'from_who', 'status_change_notes'] as const, []);
+  const searchFields = useMemo(() => ['name', 'from_who', 'status_change_notes'], []);
 
   return (
     <div className="max-w-7xl mx-auto">

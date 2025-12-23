@@ -100,7 +100,7 @@ export default function ParticipantGroupPlanRatesPage() {
         throw fetchError;
       }
 
-      setRates(data as ParticipantGroupPlanRate[]);
+      setRates(data as unknown as ParticipantGroupPlanRate[]);
     } catch (err: any) {
       console.error('Error fetching participant group plan rates:', err);
       setError(err.message || 'Failed to load rates');

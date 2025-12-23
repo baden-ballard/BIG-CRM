@@ -1419,7 +1419,7 @@ export default function ParticipantPlanDetailPage() {
               </button>
             )}
             <GlassButton
-              variant={isEditMode ? "secondary" : "primary"}
+              variant={isEditMode ? "outline" : "primary"}
               onClick={() => setIsEditMode(!isEditMode)}
             >
               {isEditMode ? 'Cancel Edit' : 'Edit'}

@@ -232,7 +232,7 @@ export default function MedicarePlansPage() {
         </div>
         <div className="flex items-center gap-3">
           <GlassButton 
-            variant="secondary" 
+            variant="outline" 
             type="button"
             onClick={() => setShowRenewalForm(true)}
           >

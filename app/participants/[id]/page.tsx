@@ -40,6 +40,12 @@ interface Dependent {
   created_at: string;
 }
 
+interface Note {
+  id: string;
+  date: string;
+  notes: string;
+}
+
 interface ParticipantPlan {
   id: string;
   participant_id: string;
@@ -355,7 +361,6 @@ export default function ParticipantDetailPage() {
         class_number: data.class_number != null ? String(data.class_number) : '',
         hire_date: hireDateValue || '',
         termination_date: terminationDateValue || '',
-        notes: '',
       });
       
       // Fetch notes will be done separately
@@ -595,7 +600,7 @@ export default function ParticipantDetailPage() {
         throw fetchError;
       }
 
-      setAllParticipants(data || []);
+      setAllParticipants((data || []) as unknown as Participant[]);
     } catch (err: any) {
       console.error('Error fetching participants:', err);
     } finally {
@@ -696,7 +701,10 @@ export default function ParticipantDetailPage() {
         if (!rateError && allRateData && allRateData.length > 0) {
           // Get the most recent active rate
           const rateData = allRateData[0];
-          plan.group_option_rate = rateData.group_option_rate;
+          const groupOptionRate = Array.isArray(rateData.group_option_rate) 
+            ? rateData.group_option_rate[0] 
+            : rateData.group_option_rate;
+          plan.group_option_rate = groupOptionRate as { id: string; rate: number } | null;
           // Store contribution info if needed
           (plan as any).contribution_type = rateData.employer_contribution_type;
           (plan as any).contribution_amount = rateData.employer_contribution_amount;
@@ -876,7 +884,7 @@ export default function ParticipantDetailPage() {
       // Deduplicate similar to group plans
       const uniquePlansMap = new Map<string, ParticipantMedicarePlan>();
       plans.forEach((plan) => {
-        const uniqueKey = `${plan.participant_id}-${plan.medicare_plan_id}-${plan.medicare_plan_option_id || 'null'}`;
+        const uniqueKey = `${plan.participant_id}-${plan.medicare_plan_id}-${plan.medicare_child_rate_id || 'null'}`;
         if (!uniquePlansMap.has(uniqueKey)) {
           uniquePlansMap.set(uniqueKey, plan);
         }
@@ -888,15 +896,8 @@ export default function ParticipantDetailPage() {
       const terminated: ParticipantMedicarePlan[] = [];
 
       uniquePlans.forEach((plan) => {
-        const terminationDate = plan.medicare_plan?.termination_date 
-          ? new Date(plan.medicare_plan.termination_date)
-          : null;
-        
-        if (terminationDate && terminationDate < today) {
-          terminated.push(plan);
-        } else {
-          active.push(plan);
-        }
+        // Medicare plans don't have termination dates, so treat all as active
+        active.push(plan);
       });
 
       setActiveMedicarePlans(active);
@@ -4122,11 +4123,6 @@ export default function ParticipantDetailPage() {
                               <h4 className="font-semibold text-[var(--glass-black-dark)] text-lg">
                                 {plan.medicare_plan?.plan_name || 'Unnamed Medicare Plan'}
                               </h4>
-                              {plan.medicare_plan?.termination_date && (
-                                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-[#C6282B] text-white">
-                                  Terminated: {formatDisplayDate(plan.medicare_plan.termination_date)}
-                                </span>
-                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-3">

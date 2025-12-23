@@ -572,6 +572,12 @@ export default function ViewGroupPlanPage() {
         start_date: '',
         end_date: '',
         employer_contribution_type: '',
+        employer_employee_contribution_value: '',
+        employer_spouse_contribution_value: '',
+        employer_child_contribution_value: '',
+        class_1_contribution_amount: '',
+        class_2_contribution_amount: '',
+        class_3_contribution_amount: '',
       });
       
       alert('Rate updated successfully!');
@@ -2412,6 +2418,12 @@ export default function ViewGroupPlanPage() {
                     start_date: '',
                     end_date: '',
                     employer_contribution_type: '',
+                    employer_employee_contribution_value: '',
+                    employer_spouse_contribution_value: '',
+                    employer_child_contribution_value: '',
+                    class_1_contribution_amount: '',
+                    class_2_contribution_amount: '',
+                    class_3_contribution_amount: '',
                   });
                 }}
                 disabled={isSavingEditRate}

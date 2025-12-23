@@ -116,9 +116,9 @@ export default function NewGroupPage() {
     try {
       // Validate that at least one visible eligibility period is filled
       const numClasses = formData.number_of_classes || 1;
-      const hasEligibilityPeriod = formData.eligibility_period && formData.eligibility_period.trim() !== '';
-      const hasEligibilityPeriodClass2 = formData.eligibility_period_class_2 && formData.eligibility_period_class_2.trim() !== '';
-      const hasEligibilityPeriodClass3 = formData.eligibility_period_class_3 && formData.eligibility_period_class_3.trim() !== '';
+      const hasEligibilityPeriod = !!(formData.eligibility_period && formData.eligibility_period.trim() !== '');
+      const hasEligibilityPeriodClass2 = !!(formData.eligibility_period_class_2 && formData.eligibility_period_class_2.trim() !== '');
+      const hasEligibilityPeriodClass3 = !!(formData.eligibility_period_class_3 && formData.eligibility_period_class_3.trim() !== '');
 
       let hasAtLeastOneEligibilityPeriod = false;
       if (numClasses === 1) {

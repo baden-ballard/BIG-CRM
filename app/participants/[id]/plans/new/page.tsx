@@ -1189,7 +1189,7 @@ export default function NewParticipantPlanPage() {
           {selectedPlan && (
             <div className="glass-card rounded-xl p-4 bg-blue-500/10 border border-blue-500/20">
               {planOptions.length > 0 ? (
-              planType === 'group' && (selectedPlan as GroupPlan).plan_type === 'Age Banded' ? (
+                planType === 'group' && (selectedPlan as GroupPlan).plan_type === 'Age Banded' ? (
                 // For Age Banded plans, show "Include" dropdown with effective date
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -1284,6 +1284,7 @@ export default function NewParticipantPlanPage() {
                     </p>
                   </div>
                 </div>
+              )
               ) : (
                 <p className="text-yellow-500">No plan options available. planOptions.length: {planOptions.length}</p>
               )}
