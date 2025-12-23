@@ -72,3 +72,4 @@ The anon/public key should:
 2. Make sure there are no line breaks in the key
 3. Try copying the key again from Supabase Dashboard
 4. Check the browser console for the exact error message
+

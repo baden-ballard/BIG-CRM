@@ -38,7 +38,7 @@
 - **Recommendation**: Create a base "Plan" structure that both Group Plans and Medicare Plans inherit from, or use a "Plan Type" discriminator
 
 ### 6. **Group Change Log - Rate Connections** ✅ RESOLVED
-- **Solution**: Group change logs now only track pipeline status changes. Rate changes are tracked through participant_group_plans and participant_medicare_plans tables. When a new rate is added, all active participants are automatically connected to that rate, creating a historical record.
+- **Solution**: Group change logs now only track pipeline status changes. Rate changes are tracked through participant_group_plans and participant_medicare_plans tables. Participant connections to new rates are handled through the renewal automation process, not automatically when rates are created.
 
 ### 7. **Authentication & User Management**
 - **Question**: Who can access the system?
@@ -147,5 +147,6 @@ Consider creating a base plan structure:
 - Add `users` table if multi-user support needed
 - Add `addresses` table for better address management
 - Add `contact_methods` table for email/phone management
+
 
 

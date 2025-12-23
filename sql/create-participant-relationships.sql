@@ -31,3 +31,4 @@ ALTER TABLE participant_relationships ENABLE ROW LEVEL SECURITY;
 -- Create policy to allow all operations for authenticated users
 CREATE POLICY "Allow all operations for authenticated users" ON participant_relationships
     FOR ALL USING (true) WITH CHECK (true);
+

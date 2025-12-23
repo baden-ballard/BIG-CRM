@@ -75,7 +75,7 @@ Track and manage the sales pipeline for groups and participants across multiple 
 - **Purpose**: Assign participants to group plans and track rate history
 - **Structure**: Many-to-Many relationship between Participants and Group Plans
 - **Capability**: Select a plan for each program part of the group
-- **Rate History**: When a new rate is added to a plan, all active participants on that plan are automatically connected to the new rate, creating a historical record
+- **Rate History**: Participant connections to new rates are handled through the renewal automation process, creating a historical record
 - **Fields**:
   - Group Plan (Related Field)
   - Plan Options (Filtered to options associated with selected plan)
@@ -95,7 +95,7 @@ Track and manage the sales pipeline for groups and participants across multiple 
   - Auto-populates when pipeline status changes
   - Fields: Date, Option (Pipeline Status), Notes (from status change notes), Origin (Status Change)
 - **Participant Rate History**: Tracked through participant_group_plans and participant_medicare_plans tables
-  - When a new rate is added to a plan, all active participants on that plan are automatically connected to the new rate
+  - Participant connections to new rates are handled through the renewal automation process
   - This creates a historical record showing which rates each participant had at different times
   - No separate change log needed for plan or rate changes
 - **Participant Change Logs**: Tracks other participant changes (not rate-related)
@@ -121,14 +121,14 @@ Track and manage the sales pipeline for groups and participants across multiple 
 ### 13. Participant Medicare Plans
 - **Purpose**: Many-to-Many relationship between Participants and Medicare Plans, tracking rate history
 - **Capability**: Add participants to multiple Medicare plans simultaneously
-- **Rate History**: When a new rate is added to a Medicare plan, all active participants on that plan are automatically connected to the new rate, creating a historical record
+- **Rate History**: Participant connections to new rates are handled through the renewal automation process, creating a historical record
 
 ## Technical Requirements
 
 ### Database Features
 - Many-to-Many relationships (Programs ↔ Providers, Groups ↔ Programs, Participants ↔ Group Plans, Participants ↔ Medicare Plans)
 - Automatic date management for rate history
-- Automatic participant rate history tracking (when new rates added, connect active participants)
+- Participant rate history tracking through renewal automation (participants connected to new rates during renewal process)
 - Change log automation (pipeline status only)
 - Filtered dropdowns based on relationships
 - Document attachment storage
@@ -149,11 +149,12 @@ Track and manage the sales pipeline for groups and participants across multiple 
 2. **Plan Setup Flow**:
    - Create Group Plan → Select Program → Select Provider → Set Plan Type
    - Add Plan Options → Add Rates (with auto date management)
-   - When new rate added → Automatically connect all active participants on that plan to the new rate
+   - When renewal processed → Participants are connected to appropriate new rates through renewal automation
 
 3. **Participant Assignment Flow**:
    - Create Participant → Assign to Group or Program directly
    - Select Group Plan → Choose Options → Set Rate (with override option)
    - Changes → Auto-create Participant Change Log
+
 
 

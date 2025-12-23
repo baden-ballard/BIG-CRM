@@ -205,6 +205,7 @@ export default function Dashboard() {
         .from('participant_group_plans')
         .select(`
           participant_id,
+          termination_date,
           group_plan:group_plans (
             termination_date
           )
@@ -220,12 +221,18 @@ export default function Dashboard() {
       // Create a set of participant IDs with active plans
       const participantsWithActivePlans = new Set<string>();
       (plansData || []).forEach((plan: any) => {
-        const terminationDate = plan.group_plan?.termination_date 
+        const participantTerminationDate = plan.termination_date 
+          ? new Date(plan.termination_date)
+          : null;
+        const groupPlanTerminationDate = plan.group_plan?.termination_date 
           ? new Date(plan.group_plan.termination_date)
           : null;
         
-        // Plan is active if termination_date is null or in the future
-        if (!terminationDate || terminationDate >= today) {
+        // Plan is active if both termination dates are null or in the future
+        const isActive = (!participantTerminationDate || participantTerminationDate >= today) &&
+                         (!groupPlanTerminationDate || groupPlanTerminationDate >= today);
+        
+        if (isActive) {
           participantsWithActivePlans.add(plan.participant_id);
         }
       });

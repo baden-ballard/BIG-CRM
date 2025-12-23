@@ -330,3 +330,4 @@ DROP TRIGGER IF EXISTS create_rate_history_on_age_banded_plan_update_trigger ON 
 CREATE TRIGGER create_rate_history_on_age_banded_plan_update_trigger
     AFTER UPDATE ON group_plans
     FOR EACH ROW EXECUTE FUNCTION create_rate_history_on_age_banded_plan_update();
+

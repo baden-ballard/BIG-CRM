@@ -8,3 +8,4 @@ ADD COLUMN IF NOT EXISTS dependent_id UUID REFERENCES dependents(id) ON DELETE C
 CREATE INDEX IF NOT EXISTS idx_participant_group_plans_dependent ON participant_group_plans(dependent_id);
 
 COMMENT ON COLUMN participant_group_plans.dependent_id IS 'If set, this plan record is for a dependent. NULL means it is for the main participant (employee).';
+

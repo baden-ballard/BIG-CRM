@@ -12,3 +12,4 @@ ALTER TABLE groups
 ALTER TABLE groups 
   ADD CONSTRAINT groups_pipeline_status_check 
   CHECK (pipeline_status IS NULL OR pipeline_status IN ('Meeting Set', 'Waiting On Decision', 'Won', 'Lost'));
+

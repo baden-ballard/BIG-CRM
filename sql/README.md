@@ -56,3 +56,4 @@ If you get errors:
 - Some errors might be about existing tables - that's okay, the script uses `IF NOT EXISTS`
 
 
+

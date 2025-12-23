@@ -46,3 +46,4 @@ console.log('   Get it from: Settings > Database > Connection pooling');
 console.log('   Format: postgresql://postgres.' + PROJECT_REF + ':[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres\n');
 
 
+

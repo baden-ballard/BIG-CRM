@@ -50,3 +50,4 @@ CHECK (
     'First of the Month Following 60 Days'
   )
 );
+

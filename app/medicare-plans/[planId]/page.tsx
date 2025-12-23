@@ -487,32 +487,8 @@ export default function ViewMedicarePlanPage() {
         throw insertError;
       }
 
-      // Automatically connect all active participants on this plan to the new rate
-      const { data: existingParticipantPlans, error: participantPlansError } = await supabase
-        .from('participant_medicare_plans')
-        .select('id, participant_id')
-        .eq('medicare_plan_id', planId);
-
-      if (participantPlansError) {
-        console.error('Error fetching participant plans:', participantPlansError);
-      } else if (existingParticipantPlans && existingParticipantPlans.length > 0) {
-        // Update participant plans to reference the new rate
-        const updatePromises = existingParticipantPlans.map((pp: any) =>
-          supabase
-            .from('participant_medicare_plans')
-            .update({ medicare_child_rate_id: newRateData.id })
-            .eq('id', pp.id)
-        );
-
-        const results = await Promise.all(updatePromises);
-        const errors = results.filter(r => r.error);
-        
-        if (errors.length > 0) {
-          console.error('Error updating participant plans:', errors);
-        } else {
-          console.log(`Successfully updated ${existingParticipantPlans.length} participant plan(s) with new rate`);
-        }
-      }
+      // Note: Participant connections to new rates are now handled through the renewal automation
+      // This automation was disabled to allow manual control through renewals
 
       // Clear editing state and refresh rates
       setEditingRate(null);
@@ -927,3 +903,5 @@ export default function ViewMedicarePlanPage() {
     </div>
   );
 }
+
+

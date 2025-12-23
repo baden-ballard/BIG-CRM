@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import GlassCard from '../../components/GlassCard';
 import GlassButton from '../../components/GlassButton';
@@ -30,9 +30,31 @@ export default function MedicarePlansPage() {
   const [filteredPlans, setFilteredPlans] = useState<MedicarePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRenewalForm, setShowRenewalForm] = useState(false);
+  const [newRenewal, setNewRenewal] = useState({
+    renewal_date: new Date().toISOString().split('T')[0],
+    selected_plan_ids: [] as string[],
+  });
+  const [renewalPlansDropdownOpen, setRenewalPlansDropdownOpen] = useState(false);
+  const renewalPlansDropdownRef = useRef<HTMLDivElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetchPlans();
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (renewalPlansDropdownRef.current && !renewalPlansDropdownRef.current.contains(event.target as Node)) {
+        setRenewalPlansDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
   const fetchPlans = async () => {
@@ -101,6 +123,87 @@ export default function MedicarePlansPage() {
     return !plan.termination_date || new Date(plan.termination_date) > new Date();
   };
 
+  const toggleRenewalPlan = (planId: string) => {
+    setNewRenewal(prev => {
+      if (prev.selected_plan_ids.includes(planId)) {
+        return {
+          ...prev,
+          selected_plan_ids: prev.selected_plan_ids.filter(id => id !== planId),
+        };
+      } else {
+        return {
+          ...prev,
+          selected_plan_ids: [...prev.selected_plan_ids, planId],
+        };
+      }
+    });
+  };
+
+  const handleAddRenewal = async () => {
+    if (!newRenewal.renewal_date) {
+      alert('Please select a renewal date');
+      return;
+    }
+
+    if (newRenewal.selected_plan_ids.length === 0) {
+      alert('Please select at least one Medicare plan to renew');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Create the Medicare renewal
+      const { data: renewalData, error: renewalError } = await supabase
+        .from('medicare_renewals')
+        .insert([{
+          renewal_date: newRenewal.renewal_date,
+        }])
+        .select()
+        .single();
+
+      if (renewalError) {
+        throw renewalError;
+      }
+
+      // Link the selected plans to the renewal
+      const renewalPlanLinks = newRenewal.selected_plan_ids.map(planId => ({
+        renewal_id: renewalData.id,
+        medicare_plan_id: planId,
+      }));
+
+      const { error: linksError } = await supabase
+        .from('renewal_medicare_plans')
+        .insert(renewalPlanLinks);
+
+      if (linksError) {
+        throw linksError;
+      }
+
+      // Reset form
+      setNewRenewal({
+        renewal_date: new Date().toISOString().split('T')[0],
+        selected_plan_ids: [],
+      });
+      setShowRenewalForm(false);
+
+      alert('Medicare renewal added successfully! All active participants have been connected to the new rates.');
+    } catch (err: any) {
+      console.error('Error adding Medicare renewal:', err);
+      alert('Failed to add Medicare renewal. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelRenewal = () => {
+    setNewRenewal({
+      renewal_date: new Date().toISOString().split('T')[0],
+      selected_plan_ids: [],
+    });
+    setShowRenewalForm(false);
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="mb-8 flex items-center justify-between">
@@ -112,10 +215,143 @@ export default function MedicarePlansPage() {
             Manage Medicare-specific insurance plans
           </p>
         </div>
-        <GlassButton variant="primary" href="/medicare-plans/new">
-          + New Medicare Plan
-        </GlassButton>
+        <div className="flex items-center gap-3">
+          <GlassButton 
+            variant="secondary" 
+            type="button"
+            onClick={() => setShowRenewalForm(true)}
+          >
+            Renew Medicare Plans
+          </GlassButton>
+          <GlassButton variant="primary" href="/medicare-plans/new">
+            + New Medicare Plan
+          </GlassButton>
+        </div>
       </div>
+
+      {/* Medicare Renewal Form */}
+      {showRenewalForm && (
+        <GlassCard className="mb-6 bg-blue-500/10 border border-blue-500/20">
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-6">
+              Renew Medicare Plans
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="renewal-date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Renewal Date *
+                </label>
+                <div className="date-input-wrapper">
+                  <input
+                    type="date"
+                    id="renewal-date"
+                    value={newRenewal.renewal_date}
+                    onChange={(e) => setNewRenewal({ ...newRenewal, renewal_date: e.target.value })}
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    required
+                  />
+                  <div className="calendar-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                      <line x1="16" y1="2" x2="16" y2="6"></line>
+                      <line x1="8" y1="2" x2="8" y2="6"></line>
+                      <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label htmlFor="plans-to-renew" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Medicare Plans to Renew *
+                </label>
+                <div className="relative" ref={renewalPlansDropdownRef}>
+                  {/* Dropdown Button */}
+                  <button
+                    type="button"
+                    onClick={() => setRenewalPlansDropdownOpen(!renewalPlansDropdownOpen)}
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl text-left flex items-center justify-between"
+                  >
+                    <span className={newRenewal.selected_plan_ids.length === 0 ? 'text-[var(--glass-gray-medium)]' : 'text-[var(--glass-black-dark)]'}>
+                      {newRenewal.selected_plan_ids.length === 0 
+                        ? 'Select Medicare plans to renew' 
+                        : `${newRenewal.selected_plan_ids.length} plan(s) selected`
+                      }
+                    </span>
+                    <span className="text-[var(--glass-gray-medium)]">
+                      {renewalPlansDropdownOpen ? '▲' : '▼'}
+                    </span>
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {renewalPlansDropdownOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-white/95 backdrop-blur-md border border-white/30 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                      {plans.length === 0 ? (
+                        <div className="px-4 py-3 text-[var(--glass-gray-medium)] text-sm">
+                          No Medicare plans available
+                        </div>
+                      ) : (
+                        plans.map((plan) => {
+                          const isSelected = newRenewal.selected_plan_ids.includes(plan.id);
+                          return (
+                            <div
+                              key={plan.id}
+                              onClick={() => toggleRenewalPlan(plan.id)}
+                              className={`px-4 py-3 cursor-pointer hover:bg-white/50 transition-colors flex items-center gap-2 ${
+                                isSelected ? 'bg-[var(--glass-secondary)]/20' : ''
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                className="w-4 h-4 text-[var(--glass-secondary)] rounded border-gray-300 focus:ring-[var(--glass-secondary)]"
+                              />
+                              <div className="flex-1">
+                                <span className={isSelected ? 'text-[var(--glass-secondary)] font-semibold' : 'text-[var(--glass-black-dark)]'}>
+                                  {plan.plan_name}
+                                </span>
+                                <div className="text-xs text-[var(--glass-gray-medium)] mt-1">
+                                  {plan.provider_name && <span>Provider: {plan.provider_name}</span>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-[var(--glass-gray-medium)] mt-2 italic">
+                  Upon saving, all active participants enrolled in the selected plans will be connected to the rates matching the renewal date.
+                </p>
+              </div>
+              <div className="bg-red-500/20 border border-red-500/40 rounded-xl p-3">
+                <p className="text-sm font-semibold text-red-500 text-center">
+                  MAKE SURE ALL PLANS AND RATES ARE ACCURATE BEFORE SAVE
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleAddRenewal}
+                  disabled={isSubmitting}
+                  className="px-4 py-3 rounded-full font-semibold bg-green-500 text-white hover:bg-green-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? 'Saving...' : 'Save Renewal'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelRenewal}
+                  disabled={isSubmitting}
+                  className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      )}
 
       {loading && (
         <GlassCard>
@@ -220,3 +456,5 @@ export default function MedicarePlansPage() {
     </div>
   );
 }
+
+

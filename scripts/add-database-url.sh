@@ -39,3 +39,4 @@ echo "⚠️  Security Note: Make sure .env is in your .gitignore file"
 echo "   (It should already be there)"
 
 
+

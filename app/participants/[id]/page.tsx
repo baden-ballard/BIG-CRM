@@ -47,6 +47,7 @@ interface ParticipantPlan {
   group_plan_option_id: string | null;
   group_option_rate_id: string | null;
   rate_override: number | null;
+  termination_date: string | null;
   created_at: string;
   updated_at: string;
   group_plan: {
@@ -686,11 +687,19 @@ export default function ParticipantDetailPage() {
       const terminated: ParticipantPlan[] = [];
 
       plansWithRates.forEach((plan) => {
-        const terminationDate = plan.group_plan?.termination_date 
+        // Check both participant plan termination date and group plan termination date
+        const participantTerminationDate = plan.termination_date 
+          ? new Date(plan.termination_date)
+          : null;
+        const groupPlanTerminationDate = plan.group_plan?.termination_date 
           ? new Date(plan.group_plan.termination_date)
           : null;
         
-        if (terminationDate && terminationDate < today) {
+        // Plan is terminated if either the participant's enrollment ended or the group plan ended
+        const isTerminated = (participantTerminationDate && participantTerminationDate < today) ||
+                           (groupPlanTerminationDate && groupPlanTerminationDate < today);
+        
+        if (isTerminated) {
           terminated.push(plan);
         } else {
           active.push(plan);
@@ -3598,9 +3607,14 @@ export default function ParticipantDetailPage() {
                               <h4 className="font-semibold text-[var(--glass-black-dark)] text-lg">
                                 {plan.group_plan?.plan_name || 'Unnamed Plan'}
                               </h4>
-                              {plan.group_plan?.termination_date && (
+                              {plan.termination_date && (
                                 <span className="px-3 py-1 rounded-full text-sm font-semibold bg-red-500 text-white">
-                                  Terminated: {formatDisplayDate(plan.group_plan.termination_date)}
+                                  Enrollment Ended: {formatDisplayDate(plan.termination_date)}
+                                </span>
+                              )}
+                              {plan.group_plan?.termination_date && (
+                                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-orange-500 text-white">
+                                  Plan Terminated: {formatDisplayDate(plan.group_plan.termination_date)}
                                 </span>
                               )}
                             </div>

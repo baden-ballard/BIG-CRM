@@ -76,3 +76,4 @@ If you're still having trouble:
 4. The connection string might be under "Database" > "Connection info" in some Supabase versions
 
 
+

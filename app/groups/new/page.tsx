@@ -537,3 +537,4 @@ export default function NewGroupPage() {
     </div>
   );
 }
+

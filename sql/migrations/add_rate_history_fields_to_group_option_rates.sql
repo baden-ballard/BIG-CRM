@@ -34,3 +34,4 @@ COMMENT ON COLUMN group_option_rates.class_3_contribution_amount IS 'Class 3 Con
 COMMENT ON COLUMN group_option_rates.employer_employee_contribution_value IS 'Employer Employee Contribution Value snapshot at time of rate creation (from group_plans for Age Banded plans)';
 COMMENT ON COLUMN group_option_rates.employer_spouse_contribution_value IS 'Employer Spouse Contribution Value snapshot at time of rate creation (from group_plans for Age Banded plans)';
 COMMENT ON COLUMN group_option_rates.employer_child_contribution_value IS 'Employer Child Contribution Value snapshot at time of rate creation (from group_plans for Age Banded plans)';
+

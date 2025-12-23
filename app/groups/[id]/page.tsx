@@ -72,6 +72,15 @@ interface Note {
   updated_at: string;
 }
 
+interface Renewal {
+  id: string;
+  group_id: string;
+  renewal_date: string;
+  created_at: string;
+  updated_at: string;
+  plans?: GroupPlan[];
+}
+
 export default function GroupDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -117,10 +126,20 @@ export default function GroupDetailPage() {
   });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [renewals, setRenewals] = useState<Renewal[]>([]);
+  const [loadingRenewals, setLoadingRenewals] = useState(true);
+  const [showAddRenewalForm, setShowAddRenewalForm] = useState(false);
+  const [newRenewal, setNewRenewal] = useState({
+    renewal_date: new Date().toISOString().split('T')[0],
+    selected_plan_ids: [] as string[],
+  });
+  const [renewalPlansDropdownOpen, setRenewalPlansDropdownOpen] = useState(false);
+  const renewalPlansDropdownRef = useRef<HTMLDivElement>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     'group-information': true,
     'plans': true,
     'participants': true,
+    'renewal': true,
     'sales-status': true,
     'notes': true,
   });
@@ -141,6 +160,7 @@ export default function GroupDetailPage() {
       fetchPrograms();
       fetchGroupPrograms();
       fetchNotes();
+      fetchRenewals();
     } else {
       setError('Group ID is missing');
       setLoading(false);
@@ -149,6 +169,7 @@ export default function GroupDetailPage() {
       setLoadingStatusHistory(false);
       setLoadingPrograms(false);
       setLoadingNotes(false);
+      setLoadingRenewals(false);
     }
   }, [groupId]);
 
@@ -158,16 +179,19 @@ export default function GroupDetailPage() {
       if (programsDropdownRef.current && !programsDropdownRef.current.contains(event.target as Node)) {
         setProgramsDropdownOpen(false);
       }
+      if (renewalPlansDropdownRef.current && !renewalPlansDropdownRef.current.contains(event.target as Node)) {
+        setRenewalPlansDropdownOpen(false);
+      }
     };
 
-    if (programsDropdownOpen) {
+    if (programsDropdownOpen || renewalPlansDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [programsDropdownOpen]);
+  }, [programsDropdownOpen, renewalPlansDropdownOpen]);
 
   const toggleProgram = (programId: string) => {
     setSelectedPrograms(prev => {
@@ -434,6 +458,107 @@ export default function GroupDetailPage() {
     }
   };
 
+  const fetchRenewals = async () => {
+    try {
+      setLoadingRenewals(true);
+
+      if (!groupId) {
+        return;
+      }
+
+      // Fetch renewals with their associated plans
+      const { data: renewalsData, error: renewalsError } = await supabase
+        .from('renewals')
+        .select('*')
+        .eq('group_id', groupId)
+        .order('renewal_date', { ascending: false });
+
+      if (renewalsError) {
+        throw renewalsError;
+      }
+
+      if (!renewalsData || renewalsData.length === 0) {
+        setRenewals([]);
+        return;
+      }
+
+      // Fetch associated plans for each renewal
+      const renewalsWithPlans = await Promise.all(
+        renewalsData.map(async (renewal) => {
+          const { data: renewalPlansData, error: plansError } = await supabase
+            .from('renewal_group_plans')
+            .select('group_plan_id')
+            .eq('renewal_id', renewal.id);
+
+          if (plansError) {
+            console.error('Error fetching renewal plans:', plansError);
+            return { ...renewal, plans: [] };
+          }
+
+          const planIds = renewalPlansData?.map((rp: any) => rp.group_plan_id) || [];
+          
+          if (planIds.length === 0) {
+            return { ...renewal, plans: [] };
+          }
+
+          // Fetch plan details
+          const { data: plansData, error: plansDetailsError } = await supabase
+            .from('group_plans')
+            .select('*')
+            .in('id', planIds);
+
+          if (plansDetailsError) {
+            console.error('Error fetching plan details:', plansDetailsError);
+            return { ...renewal, plans: [] };
+          }
+
+          // Fetch program and provider names
+          const programIds = [...new Set(plansData?.map((p: any) => p.program_id).filter(Boolean) || [])];
+          const providerIds = [...new Set(plansData?.map((p: any) => p.provider_id).filter(Boolean) || [])];
+
+          const programMap = new Map<string, string>();
+          const providerMap = new Map<string, string>();
+
+          if (programIds.length > 0) {
+            const { data: programsData } = await supabase
+              .from('programs')
+              .select('id, name')
+              .in('id', programIds);
+            
+            if (programsData) {
+              programsData.forEach((p: any) => programMap.set(p.id, p.name));
+            }
+          }
+
+          if (providerIds.length > 0) {
+            const { data: providersData } = await supabase
+              .from('providers')
+              .select('id, name')
+              .in('id', providerIds);
+            
+            if (providersData) {
+              providersData.forEach((p: any) => providerMap.set(p.id, p.name));
+            }
+          }
+
+          const plansWithNames = plansData?.map((plan: any) => ({
+            ...plan,
+            program_name: plan.program_id ? programMap.get(plan.program_id) : undefined,
+            provider_name: plan.provider_id ? providerMap.get(plan.provider_id) : undefined,
+          })) || [];
+
+          return { ...renewal, plans: plansWithNames };
+        })
+      );
+
+      setRenewals(renewalsWithPlans);
+    } catch (err: any) {
+      console.error('Error fetching renewals:', err);
+    } finally {
+      setLoadingRenewals(false);
+    }
+  };
+
   const handleAddNote = async () => {
     if (!newNote.notes.trim() || !newNote.date) {
       alert('Please enter both note content and date');
@@ -486,6 +611,95 @@ export default function GroupDetailPage() {
       date: new Date().toISOString().split('T')[0],
     });
     setShowAddNoteForm(false);
+  };
+
+  const toggleRenewalPlan = (planId: string) => {
+    setNewRenewal(prev => {
+      if (prev.selected_plan_ids.includes(planId)) {
+        return {
+          ...prev,
+          selected_plan_ids: prev.selected_plan_ids.filter(id => id !== planId),
+        };
+      } else {
+        return {
+          ...prev,
+          selected_plan_ids: [...prev.selected_plan_ids, planId],
+        };
+      }
+    });
+  };
+
+  const handleAddRenewal = async () => {
+    if (!newRenewal.renewal_date) {
+      alert('Please select a renewal date');
+      return;
+    }
+
+    if (newRenewal.selected_plan_ids.length === 0) {
+      alert('Please select at least one plan to renew');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      if (!groupId) {
+        throw new Error('Group ID is required');
+      }
+
+      // Create the renewal
+      const { data: renewalData, error: renewalError } = await supabase
+        .from('renewals')
+        .insert([{
+          group_id: groupId,
+          renewal_date: newRenewal.renewal_date,
+        }])
+        .select()
+        .single();
+
+      if (renewalError) {
+        throw renewalError;
+      }
+
+      // Link the selected plans to the renewal
+      const renewalPlanLinks = newRenewal.selected_plan_ids.map(planId => ({
+        renewal_id: renewalData.id,
+        group_plan_id: planId,
+      }));
+
+      const { error: linksError } = await supabase
+        .from('renewal_group_plans')
+        .insert(renewalPlanLinks);
+
+      if (linksError) {
+        throw linksError;
+      }
+
+      // Refresh renewals list
+      await fetchRenewals();
+
+      // Reset form
+      setNewRenewal({
+        renewal_date: new Date().toISOString().split('T')[0],
+        selected_plan_ids: [],
+      });
+      setShowAddRenewalForm(false);
+
+      alert('Renewal added successfully!');
+    } catch (err: any) {
+      console.error('Error adding renewal:', err);
+      alert('Failed to add renewal. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelAddRenewal = () => {
+    setNewRenewal({
+      renewal_date: new Date().toISOString().split('T')[0],
+      selected_plan_ids: [],
+    });
+    setShowAddRenewalForm(false);
   };
 
   const formatDate = (dateString: string | null) => {
@@ -844,7 +1058,7 @@ export default function GroupDetailPage() {
       <GlassCard>
         {/* Navigation Banner */}
         <div className="glass-nav-blue rounded-2xl p-4 mb-6">
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-6 gap-3">
             <button
               type="button"
               onClick={() => {
@@ -898,6 +1112,24 @@ export default function GroupDetailPage() {
               className="px-4 py-2 rounded-lg font-medium text-white bg-white/20 hover:bg-white/30 transition-all duration-200 backdrop-blur-sm border border-white/30 w-full"
             >
               Participants
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const sectionId = 'renewal';
+                if (collapsedSections[sectionId]) {
+                  toggleSection(sectionId);
+                  // Wait for section to expand before scrolling
+                  setTimeout(() => {
+                    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }, 100);
+                } else {
+                  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }}
+              className="px-4 py-2 rounded-lg font-medium text-white bg-white/20 hover:bg-white/30 transition-all duration-200 backdrop-blur-sm border border-white/30 w-full"
+            >
+              Renewal
             </button>
             <button
               type="button"
@@ -1377,6 +1609,227 @@ export default function GroupDetailPage() {
               </div>
             )}
             </>
+            )}
+          </div>
+
+          {/* Renewal Section */}
+          <div id="renewal" className="pt-6 border-t border-white/20 scroll-mt-4">
+            <div className="flex items-center justify-between mb-6 border-b border-black pb-4">
+              <button
+                type="button"
+                onClick={() => toggleSection('renewal')}
+                className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
+              >
+                <span className={`transform transition-transform ${collapsedSections['renewal'] ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+                <span>Renewal</span>
+              </button>
+              {!collapsedSections['renewal'] && (
+                <GlassButton
+                  variant="primary"
+                  type="button"
+                  onClick={() => setShowAddRenewalForm(true)}
+                >
+                  + Add Renewal
+                </GlassButton>
+              )}
+            </div>
+
+            {!collapsedSections['renewal'] && (
+              <>
+                {/* Add Renewal Form */}
+                {showAddRenewalForm && (
+                  <div className="mb-6 glass-card rounded-xl p-4 bg-blue-500/10 border border-blue-500/20">
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="renewal-date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Renewal Date *
+                        </label>
+                        <div className="date-input-wrapper">
+                          <input
+                            type="date"
+                            id="renewal-date"
+                            value={newRenewal.renewal_date}
+                            onChange={(e) => setNewRenewal({ ...newRenewal, renewal_date: e.target.value })}
+                            className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                            required
+                          />
+                          <div className="calendar-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                              <line x1="16" y1="2" x2="16" y2="6"></line>
+                              <line x1="8" y1="2" x2="8" y2="6"></line>
+                              <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="plans-to-renew" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Plans To Be Renewed *
+                        </label>
+                        <div className="relative" ref={renewalPlansDropdownRef}>
+                          {/* Dropdown Button */}
+                          <button
+                            type="button"
+                            onClick={() => setRenewalPlansDropdownOpen(!renewalPlansDropdownOpen)}
+                            className="glass-input-enhanced w-full px-4 py-3 rounded-xl text-left flex items-center justify-between"
+                          >
+                            <span className={newRenewal.selected_plan_ids.length === 0 ? 'text-[var(--glass-gray-medium)]' : 'text-[var(--glass-black-dark)]'}>
+                              {newRenewal.selected_plan_ids.length === 0 
+                                ? 'Select plans to renew' 
+                                : `${newRenewal.selected_plan_ids.length} plan(s) selected`
+                              }
+                            </span>
+                            <span className="text-[var(--glass-gray-medium)]">
+                              {renewalPlansDropdownOpen ? '▲' : '▼'}
+                            </span>
+                          </button>
+
+                          {/* Dropdown Menu */}
+                          {renewalPlansDropdownOpen && (
+                            <div className="absolute z-50 w-full mt-1 bg-white/95 backdrop-blur-md border border-white/30 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                              {plans.length === 0 ? (
+                                <div className="px-4 py-3 text-[var(--glass-gray-medium)] text-sm">
+                                  No plans available
+                                </div>
+                              ) : (
+                                plans.map((plan) => {
+                                  const isSelected = newRenewal.selected_plan_ids.includes(plan.id);
+                                  return (
+                                    <div
+                                      key={plan.id}
+                                      onClick={() => toggleRenewalPlan(plan.id)}
+                                      className={`px-4 py-3 cursor-pointer hover:bg-white/50 transition-colors flex items-center gap-2 ${
+                                        isSelected ? 'bg-[var(--glass-secondary)]/20' : ''
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => {}}
+                                        className="w-4 h-4 text-[var(--glass-secondary)] rounded border-gray-300 focus:ring-[var(--glass-secondary)]"
+                                      />
+                                      <div className="flex-1">
+                                        <span className={isSelected ? 'text-[var(--glass-secondary)] font-semibold' : 'text-[var(--glass-black-dark)]'}>
+                                          {plan.plan_name}
+                                        </span>
+                                        <div className="text-xs text-[var(--glass-gray-medium)] mt-1">
+                                          {plan.program_name && <span>Program: {plan.program_name}</span>}
+                                          {plan.provider_name && <span className="ml-2">Provider: {plan.provider_name}</span>}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-sm text-[var(--glass-gray-medium)] mt-2 italic">
+                          Upon saving the record, All Participants rates will updates
+                        </p>
+                      </div>
+                      <div className="bg-red-500/20 border border-red-500/40 rounded-xl p-3">
+                        <p className="text-sm font-semibold text-red-500 text-center">
+                          MAKE SURE ALL PLANS, RATES, AND EMPLOYEE ELECTIONS ARE ACCURATE BEFORE SAVE
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleAddRenewal}
+                          disabled={isSubmitting}
+                          className="px-4 py-3 rounded-full font-semibold bg-green-500 text-white hover:bg-green-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isSubmitting ? 'Saving...' : 'Save Renewal'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelAddRenewal}
+                          disabled={isSubmitting}
+                          className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Renewals List */}
+                {loadingRenewals ? (
+                  <p className="text-[var(--glass-gray-medium)] text-center py-4">
+                    Loading renewals...
+                  </p>
+                ) : renewals.length === 0 ? (
+                  <p className="text-[var(--glass-gray-medium)] text-center py-4">
+                    No renewals yet. Click "Add Renewal" to create one.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {renewals.map((renewal) => (
+                      <div
+                        key={renewal.id}
+                        className="glass-card rounded-xl p-4 bg-white/5 border border-white/10"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className="text-lg font-semibold text-[var(--glass-black-dark)]">
+                                Renewal Date: {formatDisplayDate(renewal.renewal_date)}
+                              </span>
+                            </div>
+                            {renewal.plans && renewal.plans.length > 0 ? (
+                              <div className="mt-3">
+                                <p className="text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                  Plans to be Renewed ({renewal.plans.length}):
+                                </p>
+                                <div className="space-y-2">
+                                  {renewal.plans.map((plan) => (
+                                    <div
+                                      key={plan.id}
+                                      className="glass-card rounded-lg p-3 bg-white/5 border border-white/10"
+                                    >
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="font-semibold text-[var(--glass-black-dark)]">
+                                          {plan.plan_name}
+                                        </span>
+                                      </div>
+                                      <div className="flex flex-wrap gap-3 text-xs text-[var(--glass-gray-medium)]">
+                                        {plan.program_name && (
+                                          <span>Program: {plan.program_name}</span>
+                                        )}
+                                        {plan.provider_name && (
+                                          <span>Provider: {plan.provider_name}</span>
+                                        )}
+                                        {plan.plan_type && (
+                                          <span>Type: {plan.plan_type}</span>
+                                        )}
+                                        {plan.effective_date && (
+                                          <span>Effective: {formatDisplayDate(plan.effective_date)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-[var(--glass-gray-medium)] mt-2">
+                                No plans associated with this renewal
+                              </p>
+                            )}
+                            <div className="mt-3 text-xs text-[var(--glass-gray-medium)]">
+                              Created: {new Date(renewal.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 

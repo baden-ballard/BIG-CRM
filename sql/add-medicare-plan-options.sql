@@ -120,3 +120,4 @@ BEGIN
     -- Drop function if it exists
     DROP FUNCTION IF EXISTS handle_medicare_rate_dates();
 END $$;
+

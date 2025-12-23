@@ -140,6 +140,7 @@ erDiagram
         numeric rate_override
         numeric total_employee_responsible_amount
         date effective_date
+        date termination_date
         timestamptz created_at
         timestamptz updated_at
     }
@@ -299,3 +300,5 @@ erDiagram
 - **notes** - Notes for groups or participants
 - **group_contacts** - Contact information for groups
 - **documents** - File attachments (polymorphic)
+
+

@@ -32,3 +32,4 @@ The server will start on **http://localhost:3003**
 - You can interact with the site through the browser MCP tools
 
 
+

@@ -109,8 +109,9 @@
 - group_plan_option_id (UUID, FK → group_plan_options)
 - group_option_rate_id (UUID, FK → group_option_rates)
 - rate_override (DECIMAL, nullable)
+- termination_date (DATE, nullable) - Date when the participant's enrollment in this group plan ended. NULL means the participant is still actively enrolled.
 - created_at, updated_at
-- **Note**: This table tracks participant rate history. When a new rate is added to a plan, all active participants on that plan are automatically connected to the new rate, creating a historical record of rate changes.
+- **Note**: This table tracks participant rate history. Participant connections to new rates are handled through the renewal automation process, not automatically when rates are created.
 
 ### dependents
 - id (UUID, PK)
@@ -140,7 +141,7 @@
 - medicare_plan_id (UUID, FK → medicare_plans)
 - medicare_rate_id (UUID, FK → medicare_rates)
 - created_at, updated_at
-- **Note**: This table tracks participant Medicare rate history. When a new rate is added to a Medicare plan, all active participants on that plan are automatically connected to the new rate, creating a historical record of rate changes.
+- **Note**: This table tracks participant Medicare rate history. Participant connections to new rates are handled through the renewal automation process, not automatically when rates are created.
 
 ### group_change_logs
 - id (UUID, PK)
@@ -194,9 +195,9 @@
    - New rate: Start Date = Today, Previous rate End Date = New Start Date - 1 day
 
 2. **Participant Rate History**:
-   - When a new rate is added to a group plan option, automatically connect all active participants on that plan to the new rate
-   - When a new rate is added to a Medicare plan, automatically connect all active participants on that plan to the new rate
-   - This creates a historical record of rate changes through the participant_group_plans and participant_medicare_plans junction tables
+   - Participant connections to new rates are handled through the renewal automation process
+   - Rate history is tracked through the participant_group_plans and participant_medicare_plans junction tables
+   - When renewals are processed, participants are automatically connected to the appropriate new rates
 
 3. **Change Logs**:
    - Auto-create on Pipeline Status change only
@@ -212,5 +213,6 @@
 - Multi-user support (Firebase auth)
 - Changed By fields in change logs (add later)
 - User roles and permissions
+
 
 

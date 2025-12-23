@@ -57,3 +57,4 @@ JOIN group_plans gp ON gpo.group_plan_id = gp.id;
 -- Grant permissions
 GRANT SELECT ON group_option_rates_with_formulas TO authenticated;
 GRANT SELECT ON group_option_rates_with_formulas TO anon;
+

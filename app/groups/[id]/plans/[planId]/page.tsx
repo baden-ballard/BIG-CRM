@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import GlassCard from '../../../../../components/GlassCard';
@@ -116,6 +116,35 @@ export default function ViewGroupPlanPage() {
   const [editedClass2ContributionAmount, setEditedClass2ContributionAmount] = useState('');
   const [editedClass3ContributionAmount, setEditedClass3ContributionAmount] = useState('');
   const [isSavingRate, setIsSavingRate] = useState(false);
+  const [showEditRateModal, setShowEditRateModal] = useState(false);
+  const [editingRate, setEditingRate] = useState<{
+    id: string;
+    optionId: string;
+    optionName: string;
+    rate: number;
+    start_date: string;
+    end_date: string | null;
+    employer_contribution_type: string | null;
+    employer_employee_contribution_value: number | null;
+    employer_spouse_contribution_value: number | null;
+    employer_child_contribution_value: number | null;
+    class_1_contribution_amount: number | null;
+    class_2_contribution_amount: number | null;
+    class_3_contribution_amount: number | null;
+  } | null>(null);
+  const [editRateFormData, setEditRateFormData] = useState({
+    rate: '',
+    start_date: '',
+    end_date: '',
+    employer_contribution_type: '',
+    employer_employee_contribution_value: '',
+    employer_spouse_contribution_value: '',
+    employer_child_contribution_value: '',
+    class_1_contribution_amount: '',
+    class_2_contribution_amount: '',
+    class_3_contribution_amount: '',
+  });
+  const [isSavingEditRate, setIsSavingEditRate] = useState(false);
 
   useEffect(() => {
     if (planId && groupId) {
@@ -128,6 +157,7 @@ export default function ViewGroupPlanPage() {
       setLoading(false);
     }
   }, [planId, groupId]);
+
 
   const formatDateForInput = (dateString: string | null) => {
     if (!dateString) return '';
@@ -394,6 +424,163 @@ export default function ViewGroupPlanPage() {
     setEditedClass1ContributionAmount('');
     setEditedClass2ContributionAmount('');
     setEditedClass3ContributionAmount('');
+  };
+
+  const handleEditRate = useCallback((rateRecord: {
+    id: string;
+    rate: number;
+    start_date: string;
+    end_date: string | null;
+    employer_contribution_type: string | null;
+    employer_employee_contribution_value?: number | null;
+    employer_spouse_contribution_value?: number | null;
+    employer_child_contribution_value?: number | null;
+    class_1_contribution_amount?: number | null;
+    class_2_contribution_amount?: number | null;
+    class_3_contribution_amount?: number | null;
+  }, optionId: string, optionName: string) => {
+    setEditingRate({
+      id: rateRecord.id,
+      optionId,
+      optionName,
+      rate: rateRecord.rate,
+      start_date: rateRecord.start_date,
+      end_date: rateRecord.end_date,
+      employer_contribution_type: rateRecord.employer_contribution_type,
+      employer_employee_contribution_value: rateRecord.employer_employee_contribution_value ?? null,
+      employer_spouse_contribution_value: rateRecord.employer_spouse_contribution_value ?? null,
+      employer_child_contribution_value: rateRecord.employer_child_contribution_value ?? null,
+      class_1_contribution_amount: rateRecord.class_1_contribution_amount ?? null,
+      class_2_contribution_amount: rateRecord.class_2_contribution_amount ?? null,
+      class_3_contribution_amount: rateRecord.class_3_contribution_amount ?? null,
+    });
+    setEditRateFormData({
+      rate: rateRecord.rate.toString(),
+      start_date: formatDateForInput(rateRecord.start_date),
+      end_date: rateRecord.end_date ? formatDateForInput(rateRecord.end_date) : '',
+      employer_contribution_type: rateRecord.employer_contribution_type || '',
+      employer_employee_contribution_value: rateRecord.employer_employee_contribution_value?.toString() || '',
+      employer_spouse_contribution_value: rateRecord.employer_spouse_contribution_value?.toString() || '',
+      employer_child_contribution_value: rateRecord.employer_child_contribution_value?.toString() || '',
+      class_1_contribution_amount: rateRecord.class_1_contribution_amount?.toString() || '',
+      class_2_contribution_amount: rateRecord.class_2_contribution_amount?.toString() || '',
+      class_3_contribution_amount: rateRecord.class_3_contribution_amount?.toString() || '',
+    });
+    setShowEditRateModal(true);
+  }, []);
+
+  const handleSaveEditRate = async () => {
+    if (!editingRate) return;
+
+    if (!editRateFormData.rate.trim() || isNaN(parseFloat(editRateFormData.rate))) {
+      alert('Valid rate is required');
+      return;
+    }
+
+    if (!editRateFormData.start_date.trim()) {
+      alert('Rate Start Date is required');
+      return;
+    }
+
+    setIsSavingEditRate(true);
+    try {
+      const updateData: any = {
+        rate: parseFloat(editRateFormData.rate),
+        start_date: editRateFormData.start_date,
+        end_date: editRateFormData.end_date.trim() || null,
+      };
+
+      if (editRateFormData.employer_contribution_type.trim()) {
+        updateData.employer_contribution_type = editRateFormData.employer_contribution_type;
+      } else {
+        updateData.employer_contribution_type = null;
+      }
+
+      // Employer contribution values (for Age Banded plans)
+      if (editRateFormData.employer_employee_contribution_value.trim()) {
+        const value = parseFloat(editRateFormData.employer_employee_contribution_value);
+        if (!isNaN(value)) {
+          updateData.employer_employee_contribution_value = value;
+        }
+      } else {
+        updateData.employer_employee_contribution_value = null;
+      }
+
+      if (editRateFormData.employer_spouse_contribution_value.trim()) {
+        const value = parseFloat(editRateFormData.employer_spouse_contribution_value);
+        if (!isNaN(value)) {
+          updateData.employer_spouse_contribution_value = value;
+        }
+      } else {
+        updateData.employer_spouse_contribution_value = null;
+      }
+
+      if (editRateFormData.employer_child_contribution_value.trim()) {
+        const value = parseFloat(editRateFormData.employer_child_contribution_value);
+        if (!isNaN(value)) {
+          updateData.employer_child_contribution_value = value;
+        }
+      } else {
+        updateData.employer_child_contribution_value = null;
+      }
+
+      // Class contribution amounts
+      if (editRateFormData.class_1_contribution_amount.trim()) {
+        const value = parseFloat(editRateFormData.class_1_contribution_amount);
+        if (!isNaN(value)) {
+          updateData.class_1_contribution_amount = value;
+        }
+      } else {
+        updateData.class_1_contribution_amount = null;
+      }
+
+      if (editRateFormData.class_2_contribution_amount.trim()) {
+        const value = parseFloat(editRateFormData.class_2_contribution_amount);
+        if (!isNaN(value)) {
+          updateData.class_2_contribution_amount = value;
+        }
+      } else {
+        updateData.class_2_contribution_amount = null;
+      }
+
+      if (editRateFormData.class_3_contribution_amount.trim()) {
+        const value = parseFloat(editRateFormData.class_3_contribution_amount);
+        if (!isNaN(value)) {
+          updateData.class_3_contribution_amount = value;
+        }
+      } else {
+        updateData.class_3_contribution_amount = null;
+      }
+
+      const { error } = await supabase
+        .from('group_option_rates')
+        .update(updateData)
+        .eq('id', editingRate.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // Refresh options to show updated values
+      await fetchPlanOptions();
+      
+      // Close modal
+      setShowEditRateModal(false);
+      setEditingRate(null);
+      setEditRateFormData({
+        rate: '',
+        start_date: '',
+        end_date: '',
+        employer_contribution_type: '',
+      });
+      
+      alert('Rate updated successfully!');
+    } catch (error: any) {
+      console.error('Error updating rate:', error);
+      alert(`Failed to update rate: ${error.message || 'Please try again.'}`);
+    } finally {
+      setIsSavingEditRate(false);
+    }
   };
 
   const handleSaveRate = async (optionId: string) => {
@@ -1716,7 +1903,24 @@ export default function ViewGroupPlanPage() {
                               const currentRate = sortedCurrentRates[0];
                               
                               return (
-                                <div className="glass-card rounded-lg p-3 border bg-green-500/10 border-green-500/20">
+                                <div 
+                                  className="glass-card rounded-lg p-3 border bg-green-500/10 border-green-500/20 cursor-pointer hover:bg-green-500/20 transition-all"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleEditRate(currentRate, opt.id, opt.option);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (!isViewMode && (e.key === 'Enter' || e.key === ' ')) {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleEditRate(currentRate, opt.id, opt.option);
+                                    }
+                                  }}
+                                  role={!isViewMode ? "button" : undefined}
+                                  tabIndex={!isViewMode ? 0 : undefined}
+                                  title={!isViewMode ? "Click to edit rate" : ""}
+                                >
                                   <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
                                     <div>
                                       <span className="font-semibold">Status: </span>
@@ -1790,15 +1994,31 @@ export default function ViewGroupPlanPage() {
                                 <div className="space-y-3">
                                   {sortedHistoryRates.map((rateRecord) => {
                                     const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
-                                    const statusColors = {
+                                    const statusColors: Record<'Planned' | 'Current' | 'Ended', string> = {
                                       Planned: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
+                                      Current: 'bg-green-500/10 border-green-500/20 text-green-700',
                                       Ended: 'bg-gray-500/10 border-gray-500/20 text-gray-700'
                                     };
                                     
                                     return (
                                       <div
                                         key={rateRecord.id}
-                                        className={`glass-card rounded-lg p-3 border ${statusColors[status]}`}
+                                        className={`glass-card rounded-lg p-3 border ${statusColors[status]} cursor-pointer hover:opacity-80 transition-all`}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          handleEditRate(rateRecord, opt.id, opt.option);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (!isViewMode && (e.key === 'Enter' || e.key === ' ')) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleEditRate(rateRecord, opt.id, opt.option);
+                                          }
+                                        }}
+                                        role={!isViewMode ? "button" : undefined}
+                                        tabIndex={!isViewMode ? 0 : undefined}
+                                        title={!isViewMode ? "Click to edit rate" : ""}
                                       >
                                         <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
                                           <div>
@@ -1949,6 +2169,297 @@ export default function ViewGroupPlanPage() {
                 className="px-6 py-3 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isUploadingRates ? 'Uploading...' : 'Upload Rates'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Rate Modal */}
+      {showEditRateModal && editingRate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {
+          if (!isSavingEditRate) {
+            setShowEditRateModal(false);
+            setEditingRate(null);
+            setEditRateFormData({
+              rate: '',
+              start_date: '',
+              end_date: '',
+              employer_contribution_type: '',
+              employer_employee_contribution_value: '',
+              employer_spouse_contribution_value: '',
+              employer_child_contribution_value: '',
+              class_1_contribution_amount: '',
+              class_2_contribution_amount: '',
+              class_3_contribution_amount: '',
+            });
+          }
+        }}>
+          <div 
+            className="max-w-2xl w-full mx-4 shadow-2xl rounded-3xl p-8 bg-white/95 backdrop-blur-xl border border-white/40"
+            style={{ background: 'rgba(255, 255, 255, 0.95)', backdropFilter: 'blur(24px) saturate(200%)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
+              Edit Rate History
+            </h3>
+            
+            <div className="space-y-4">
+              {/* Option and Rate - Side by Side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Option Name (read-only) */}
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Option
+                  </label>
+                  <input
+                    type="text"
+                    value={editingRate.optionName}
+                    disabled
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl opacity-75 cursor-not-allowed"
+                  />
+                </div>
+
+                {/* Rate */}
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Rate *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editRateFormData.rate}
+                    onChange={(e) => setEditRateFormData({ ...editRateFormData, rate: e.target.value })}
+                    disabled={isSavingEditRate}
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    placeholder="Enter rate"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Rate Start Date and Rate End Date - Side by Side */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Rate Start Date */}
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Rate Start Date *
+                  </label>
+                  <div className="date-input-wrapper">
+                    <input
+                      type="date"
+                      value={editRateFormData.start_date}
+                      onChange={(e) => setEditRateFormData({ ...editRateFormData, start_date: e.target.value })}
+                      disabled={isSavingEditRate}
+                      className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                      required
+                    />
+                    <div className="calendar-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rate End Date */}
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Rate End Date
+                  </label>
+                  <div className="date-input-wrapper">
+                    <input
+                      type="date"
+                      value={editRateFormData.end_date}
+                      onChange={(e) => setEditRateFormData({ ...editRateFormData, end_date: e.target.value })}
+                      disabled={isSavingEditRate}
+                      className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    />
+                    <div className="calendar-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contribution Type */}
+              <div>
+                <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Contribution Type
+                </label>
+                <select
+                  value={editRateFormData.employer_contribution_type}
+                  onChange={(e) => setEditRateFormData({ ...editRateFormData, employer_contribution_type: e.target.value })}
+                  disabled={isSavingEditRate}
+                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                >
+                  <option value="">Select contribution type</option>
+                  <option value="Dollar">Dollar</option>
+                  <option value="Percentage">Percentage</option>
+                </select>
+              </div>
+
+              {/* Employer Contribution Values - Only show if plan type is "Age Banded" */}
+              {formData.plan_type === 'Age Banded' && (
+                <div className="pt-4 border-t border-white/20">
+                  <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
+                    Employer Contribution Values
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Employer Employee Contribution Value */}
+                    <div>
+                      <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                        Employer Employee Contribution Value
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editRateFormData.employer_employee_contribution_value}
+                        onChange={(e) => setEditRateFormData({ ...editRateFormData, employer_employee_contribution_value: e.target.value })}
+                        disabled={isSavingEditRate}
+                        className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                        placeholder="Enter amount"
+                      />
+                    </div>
+
+                    {/* Employer Spouse Contribution Value */}
+                    <div>
+                      <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                        Employer Spouse Contribution Value
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editRateFormData.employer_spouse_contribution_value}
+                        onChange={(e) => setEditRateFormData({ ...editRateFormData, employer_spouse_contribution_value: e.target.value })}
+                        disabled={isSavingEditRate}
+                        className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                        placeholder="Enter amount"
+                      />
+                    </div>
+
+                    {/* Employer Child Contribution Value */}
+                    <div>
+                      <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                        Employer Child Contribution Value
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editRateFormData.employer_child_contribution_value}
+                        onChange={(e) => setEditRateFormData({ ...editRateFormData, employer_child_contribution_value: e.target.value })}
+                        disabled={isSavingEditRate}
+                        className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                        placeholder="Enter amount"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Class Contribution Amounts - Show based on number_of_classes */}
+              {numberOfClasses > 0 && (
+                <div className="pt-4 border-t border-white/20">
+                  <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
+                    Class Contribution Amounts
+                  </h4>
+                  <div className={`grid grid-cols-1 gap-4 ${
+                    numberOfClasses === 1 ? 'md:grid-cols-1' : 
+                    numberOfClasses === 2 ? 'md:grid-cols-2' : 
+                    'md:grid-cols-3'
+                  }`}>
+                    {/* Class 1 Contribution Amount */}
+                    <div>
+                      <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                        Class 1 Contribution Amount
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editRateFormData.class_1_contribution_amount}
+                        onChange={(e) => setEditRateFormData({ ...editRateFormData, class_1_contribution_amount: e.target.value })}
+                        disabled={isSavingEditRate}
+                        className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                        placeholder="Enter amount"
+                      />
+                    </div>
+                    
+                    {/* Class 2 Contribution Amount - Show if 2 or more classes */}
+                    {numberOfClasses >= 2 && (
+                      <div>
+                        <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Class 2 Contribution Amount
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={editRateFormData.class_2_contribution_amount}
+                          onChange={(e) => setEditRateFormData({ ...editRateFormData, class_2_contribution_amount: e.target.value })}
+                          disabled={isSavingEditRate}
+                          className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                          placeholder="Enter amount"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Class 3 Contribution Amount - Show if 3 classes */}
+                    {numberOfClasses >= 3 && (
+                      <div>
+                        <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Class 3 Contribution Amount
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={editRateFormData.class_3_contribution_amount}
+                          onChange={(e) => setEditRateFormData({ ...editRateFormData, class_3_contribution_amount: e.target.value })}
+                          disabled={isSavingEditRate}
+                          className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                          placeholder="Enter amount"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-4 justify-end mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditRateModal(false);
+                  setEditingRate(null);
+                  setEditRateFormData({
+                    rate: '',
+                    start_date: '',
+                    end_date: '',
+                    employer_contribution_type: '',
+                  });
+                }}
+                disabled={isSavingEditRate}
+                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditRate}
+                disabled={isSavingEditRate}
+                className="px-6 py-3 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSavingEditRate ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

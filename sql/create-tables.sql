@@ -156,3 +156,4 @@ CREATE POLICY "Allow all operations for authenticated users" ON notes
     FOR ALL USING (true) WITH CHECK (true);
 
 
+

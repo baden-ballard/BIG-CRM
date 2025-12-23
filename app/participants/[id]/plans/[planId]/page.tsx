@@ -13,6 +13,8 @@ interface ParticipantPlan {
   group_plan_option_id: string | null;
   group_option_rate_id: string | null;
   rate_override: number | null;
+  effective_date: string | null;
+  termination_date: string | null;
   dependent_id: string | null;
   total_employee_responsible_amount: number | null;
   total_all_plans_employee_responsible_amount: number | null;
@@ -78,6 +80,8 @@ interface RateHistoryRecord {
     end_date: string | null;
   } | null;
   rate_override: number | null;
+  plan_option_id: string | null;
+  plan_option_name: string | null;
 }
 
 export default function ParticipantPlanDetailPage() {
@@ -99,6 +103,17 @@ export default function ParticipantPlanDetailPage() {
   const [selectedRateRecord, setSelectedRateRecord] = useState<RateHistoryRecord | null>(null);
   const [planToDelete, setPlanToDelete] = useState<ParticipantPlan | null>(null);
   const [isDeletingPlan, setIsDeletingPlan] = useState(false);
+  const [isEditingPlanDetails, setIsEditingPlanDetails] = useState(false);
+  const [planOptions, setPlanOptions] = useState<Array<{ id: string; option: string }>>([]);
+  const [planFormData, setPlanFormData] = useState({
+    group_plan_option_id: '',
+    effective_date: '',
+    termination_date: '',
+  });
+  const [isSavingPlanDetails, setIsSavingPlanDetails] = useState(false);
+  const [showPlanOptionChangeDialog, setShowPlanOptionChangeDialog] = useState(false);
+  const [pendingPlanOptionChange, setPendingPlanOptionChange] = useState<string>('');
+  const [originalPlanOptionId, setOriginalPlanOptionId] = useState<string>('');
 
   useEffect(() => {
     if (participantId && planId) {
@@ -259,6 +274,7 @@ export default function ParticipantPlanDetailPage() {
           id,
           rate_override,
           dependent_id,
+          group_plan_option_id,
           dependent:dependents (
             id,
             name,
@@ -404,12 +420,40 @@ export default function ParticipantPlanDetailPage() {
           dependent_id: p.dependent_id,
           dependent_name: p.dependent?.name || null,
           dependent_relationship: p.dependent?.relationship || null,
+          group_plan_option_id: p.group_plan_option_id || null,
         }
       ]));
+
+      // Fetch plan options for all participant plans to get option names
+      const planOptionIds = new Set<string>();
+      participantPlansData.forEach((p: any) => {
+        if (p.group_plan_option_id) {
+          planOptionIds.add(p.group_plan_option_id);
+        }
+      });
+      
+      const planOptionsMap = new Map<string, string>();
+      if (planOptionIds.size > 0) {
+        const { data: optionsData } = await supabase
+          .from('group_plan_options')
+          .select('id, option')
+          .in('id', Array.from(planOptionIds));
+        
+        if (optionsData) {
+          optionsData.forEach((opt: any) => {
+            planOptionsMap.set(opt.id, opt.option);
+          });
+        }
+      }
 
       // Map the junction data to include plan and dependent information
       const rateHistory = (junctionData || []).map((record: any) => {
         const planInfo = planMap.get(record.participant_group_plan_id);
+        // Find the plan option ID from participant plans
+        const participantPlan = participantPlansData.find((p: any) => p.id === record.participant_group_plan_id);
+        const planOptionId = participantPlan?.group_plan_option_id || null;
+        const planOptionName = planOptionId ? planOptionsMap.get(planOptionId) || null : null;
+        
         return {
           id: record.id,
           created_at: record.created_at,
@@ -419,6 +463,8 @@ export default function ParticipantPlanDetailPage() {
           dependent_relationship: planInfo?.dependent_relationship || null,
           rate_override: planInfo?.rate_override || null,
           group_option_rate: record.group_option_rate,
+          plan_option_id: planOptionId,
+          plan_option_name: planOptionName,
         };
       });
 
@@ -432,8 +478,134 @@ export default function ParticipantPlanDetailPage() {
   useEffect(() => {
     if (currentPlan) {
       fetchRateHistory(currentPlan.group_plan_id, currentPlan.group_plan_option_id);
+      fetchPlanOptions(currentPlan.group_plan_id);
+      // Initialize form data
+      const initialPlanOptionId = currentPlan.group_plan_option_id || '';
+      setPlanFormData({
+        group_plan_option_id: initialPlanOptionId,
+        effective_date: currentPlan.effective_date || '',
+        termination_date: currentPlan.termination_date || '',
+      });
+      setOriginalPlanOptionId(initialPlanOptionId);
     }
   }, [currentPlan]);
+
+  const fetchPlanOptions = async (groupPlanId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('group_plan_options')
+        .select('id, option')
+        .eq('group_plan_id', groupPlanId)
+        .order('option', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching plan options:', error);
+        return;
+      }
+
+      setPlanOptions((data || []) as Array<{ id: string; option: string }>);
+    } catch (err: any) {
+      console.error('Error fetching plan options:', err);
+    }
+  };
+
+  const handleSavePlanDetails = async () => {
+    if (!currentPlan) return;
+
+    try {
+      setIsSavingPlanDetails(true);
+
+      const updateData: any = {};
+      
+      if (planFormData.group_plan_option_id !== (currentPlan.group_plan_option_id || '')) {
+        updateData.group_plan_option_id = planFormData.group_plan_option_id || null;
+      }
+      
+      if (planFormData.effective_date !== (currentPlan.effective_date || '')) {
+        updateData.effective_date = planFormData.effective_date || null;
+      }
+      
+      if (planFormData.termination_date !== (currentPlan.termination_date || '')) {
+        updateData.termination_date = planFormData.termination_date || null;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        setIsEditingPlanDetails(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from('participant_group_plans')
+        .update(updateData)
+        .eq('id', currentPlan.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // Refresh the plan data
+      await fetchParticipantPlan();
+      setIsEditingPlanDetails(false);
+      alert('Plan details updated successfully!');
+    } catch (err: any) {
+      console.error('Error saving plan details:', err);
+      alert(`Failed to save plan details: ${err.message || 'Please try again.'}`);
+    } finally {
+      setIsSavingPlanDetails(false);
+    }
+  };
+
+  const handleCancelEditPlanDetails = () => {
+    if (currentPlan) {
+      const originalPlanOptionId = currentPlan.group_plan_option_id || '';
+      setPlanFormData({
+        group_plan_option_id: originalPlanOptionId,
+        effective_date: currentPlan.effective_date || '',
+        termination_date: currentPlan.termination_date || '',
+      });
+      setOriginalPlanOptionId(originalPlanOptionId);
+    }
+    setIsEditingPlanDetails(false);
+    setShowPlanOptionChangeDialog(false);
+  };
+
+  const handlePlanOptionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newValue = e.target.value;
+    // If the value is different from the original, show confirmation dialog
+    if (newValue !== originalPlanOptionId) {
+      // Prevent the dropdown from changing by resetting it
+      e.target.value = planFormData.group_plan_option_id;
+      setPendingPlanOptionChange(newValue);
+      setShowPlanOptionChangeDialog(true);
+    } else {
+      // If reverting to original, just update the form
+      setPlanFormData({ ...planFormData, group_plan_option_id: newValue });
+    }
+  };
+
+  const handleContinuePlanOptionChange = () => {
+    // Keep the change in the form
+    setPlanFormData({ ...planFormData, group_plan_option_id: pendingPlanOptionChange });
+    setShowPlanOptionChangeDialog(false);
+    setPendingPlanOptionChange('');
+  };
+
+  const handleCancelPlanOptionChange = () => {
+    // Revert to original value
+    setPlanFormData({ ...planFormData, group_plan_option_id: originalPlanOptionId });
+    setShowPlanOptionChangeDialog(false);
+    setPendingPlanOptionChange('');
+  };
+
+  const formatDateForInput = (dateString: string | null) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toISOString().split('T')[0];
+    } catch {
+      return '';
+    }
+  };
 
   // Update stored total_employee_responsible_amount for each plan record when rates change
   // This must be before any early returns to follow Rules of Hooks
@@ -1264,47 +1436,212 @@ export default function ParticipantPlanDetailPage() {
                 </div>
               </div>
 
-              {/* Current Rate Display */}
-              {displayRate !== null && (
-                <div className="glass-card rounded-xl p-6 bg-blue-500/10 border border-blue-500/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">
-                        {currentPlan.group_plan?.plan_type === 'Age Banded' ? 'Total Rate (All Plans)' : 'Current Rate'}
-                      </p>
-                      <p className="text-xs text-[var(--glass-gray-medium)]">
-                        {currentPlan.group_plan?.plan_type === 'Age Banded' 
-                          ? 'Sum of employee + all dependents' 
-                          : isCustomRateOverride 
-                            ? 'Custom rate override' 
-                            : 'Current plan rate'}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
-                        ${displayRate.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
+              {/* Editable Plan Details */}
+              <div className="glass-card rounded-xl p-6 bg-white/5 border border-white/10">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-[var(--glass-black-dark)]">
+                    Plan Details
+                  </h3>
+                  {!isEditingPlanDetails && (
+                    <button
+                      onClick={() => setIsEditingPlanDetails(true)}
+                      className="text-[var(--glass-secondary)] hover:text-[var(--glass-secondary-dark)] font-medium transition-colors duration-200 text-sm"
+                    >
+                      Edit
+                    </button>
+                  )}
                 </div>
-              )}
 
-              {/* Employee Responsible Amount Indicator */}
-              {totalEmployeeResponsibleAmount !== null && (
-                <div className="glass-card rounded-xl p-6 bg-blue-500/10 border border-blue-500/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Employee Responsible Amount</p>
-                      <p className="text-xs text-[var(--glass-gray-medium)]">
-                        Summary of all active Participants Group plan rates
-                      </p>
+                {isEditingPlanDetails ? (
+                  <div className="space-y-4">
+                    {/* Row 1: Related Plan and Plan Option */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Related Plan */}
+                      <div>
+                        <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Related Plan
+                        </label>
+                        <div className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-[var(--glass-black-dark)]">
+                          {currentPlan.group_plan?.plan_name || 'N/A'}
+                          {currentPlan.group_plan?.group && (
+                            <span className="text-sm text-[var(--glass-gray-medium)] ml-2">
+                              ({currentPlan.group_plan.group.name})
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[var(--glass-gray-medium)] mt-1">
+                          This is the group plan this participant is enrolled in
+                        </p>
+                      </div>
+
+                      {/* Plan Option - Only show for Composite plans */}
+                      {currentPlan.group_plan?.plan_type === 'Composite' ? (
+                        <div>
+                          <label htmlFor="plan_option" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                            Plan Option
+                          </label>
+                          <select
+                            id="plan_option"
+                            value={planFormData.group_plan_option_id}
+                            onChange={handlePlanOptionChange}
+                            className="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-[var(--glass-black-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--glass-secondary)] focus:border-transparent"
+                          >
+                            <option value="">Select Plan Option</option>
+                            {planOptions.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div></div>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
-                        ${totalEmployeeResponsibleAmount.toFixed(2)}
-                      </p>
+
+                    {/* Row 2: Effective Date and Termination Date */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Effective Date */}
+                      <div>
+                        <label htmlFor="effective_date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Effective Date
+                        </label>
+                        <input
+                          type="date"
+                          id="effective_date"
+                          value={formatDateForInput(planFormData.effective_date)}
+                          onChange={(e) => setPlanFormData({ ...planFormData, effective_date: e.target.value })}
+                          className="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-[var(--glass-black-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--glass-secondary)] focus:border-transparent"
+                        />
+                      </div>
+
+                      {/* Termination Date */}
+                      <div>
+                        <label htmlFor="termination_date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                          Termination Date
+                        </label>
+                        <input
+                          type="date"
+                          id="termination_date"
+                          value={formatDateForInput(planFormData.termination_date)}
+                          onChange={(e) => setPlanFormData({ ...planFormData, termination_date: e.target.value })}
+                          className="w-full px-4 py-2 rounded-lg bg-white/10 border border-white/20 text-[var(--glass-black-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--glass-secondary)] focus:border-transparent"
+                        />
+                        <p className="text-xs text-[var(--glass-gray-medium)] mt-1">
+                          Leave empty if the plan is still active
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-3 pt-2">
+                      <button
+                        onClick={handleSavePlanDetails}
+                        disabled={isSavingPlanDetails}
+                        className="px-4 py-2 bg-[var(--glass-secondary)] text-white rounded-lg hover:bg-[var(--glass-secondary-dark)] transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                      >
+                        {isSavingPlanDetails ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button
+                        onClick={handleCancelEditPlanDetails}
+                        disabled={isSavingPlanDetails}
+                        className="px-4 py-2 bg-white/10 text-[var(--glass-black-dark)] rounded-lg hover:bg-white/20 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                      >
+                        Cancel
+                      </button>
                     </div>
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Row 1: Related Plan and Plan Option */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center justify-between py-2">
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Related Plan:</span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {currentPlan.group_plan?.plan_name || 'N/A'}
+                          {currentPlan.group_plan?.group && (
+                            <span className="text-sm text-[var(--glass-gray-medium)] ml-2">
+                              ({currentPlan.group_plan.group.name})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                      {currentPlan.group_plan?.plan_type === 'Composite' ? (
+                        <div className="flex items-center justify-between py-2">
+                          <span className="text-sm text-[var(--glass-gray-medium)]">Plan Option:</span>
+                          <span className="text-[var(--glass-black-dark)] font-medium">
+                            {currentPlan.group_plan_option?.option || 'Not set'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div></div>
+                      )}
+                    </div>
+                    {/* Row 2: Effective Date and Termination Date */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center justify-between py-2">
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Effective Date:</span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {currentPlan.effective_date ? formatDisplayDate(currentPlan.effective_date) : 'Not set'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between py-2">
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Termination Date:</span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {currentPlan.termination_date ? formatDisplayDate(currentPlan.termination_date) : 'Active'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Current Rate Display and Employee Responsible Amount - Side by Side */}
+              {(displayRate !== null || totalEmployeeResponsibleAmount !== null) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Current Rate Display */}
+                  {displayRate !== null && (
+                    <div className="glass-card rounded-xl p-6 bg-blue-500/10 border border-blue-500/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-[var(--glass-gray-medium)] mb-1">
+                            {currentPlan.group_plan?.plan_type === 'Age Banded' ? 'Total Rate (All Plans)' : 'Current Rate'}
+                          </p>
+                          <p className="text-xs text-[var(--glass-gray-medium)]">
+                            {currentPlan.group_plan?.plan_type === 'Age Banded' 
+                              ? 'Sum of employee + all dependents' 
+                              : isCustomRateOverride 
+                                ? 'Custom rate override' 
+                                : 'Current plan rate'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
+                            ${displayRate.toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Employee Responsible Amount Indicator */}
+                  {totalEmployeeResponsibleAmount !== null && (
+                    <div className="glass-card rounded-xl p-6 bg-blue-500/10 border border-blue-500/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Employee Responsible Amount</p>
+                          <p className="text-xs text-[var(--glass-gray-medium)]">
+                            Summary of all active Participants Group plan rates
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
+                            ${totalEmployeeResponsibleAmount.toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1346,10 +1683,25 @@ export default function ParticipantPlanDetailPage() {
                 No rate history available
               </p>
             ) : (() => {
+              // Sort rate history by start_date descending (most recent first), then by created_at descending
+              const sortedRateHistory = [...rateHistory].sort((a, b) => {
+                const aStartDate = a.group_option_rate?.start_date ? new Date(a.group_option_rate.start_date).getTime() : 0;
+                const bStartDate = b.group_option_rate?.start_date ? new Date(b.group_option_rate.start_date).getTime() : 0;
+                
+                if (bStartDate !== aStartDate) {
+                  return bStartDate - aStartDate; // Descending order (newest first)
+                }
+                
+                // If start dates are equal, sort by created_at descending
+                const aCreated = new Date(a.created_at).getTime();
+                const bCreated = new Date(b.created_at).getTime();
+                return bCreated - aCreated;
+              });
+              
               // Group rate history by type (Participant, Spouse, Child)
-              const participantRecords = rateHistory.filter(r => !r.dependent_id);
-              const spouseRecords = rateHistory.filter(r => r.dependent_relationship === 'Spouse');
-              const childRecords = rateHistory.filter(r => r.dependent_relationship === 'Child');
+              const participantRecords = sortedRateHistory.filter(r => !r.dependent_id);
+              const spouseRecords = sortedRateHistory.filter(r => r.dependent_relationship === 'Spouse');
+              const childRecords = sortedRateHistory.filter(r => r.dependent_relationship === 'Child');
               
               // Group children by name if multiple
               const childrenByName = new Map<string, RateHistoryRecord[]>();
@@ -1369,6 +1721,36 @@ export default function ParticipantPlanDetailPage() {
                 const employeeAmount = calculateEmployeeResponsibleAmount(recordRate, currentPlan);
                 const isCurrent = isMostRecent && (!record.group_option_rate?.end_date);
 
+                // Calculate contribution amount
+                let contributionAmount: number | null = null;
+                let contributionType: string | null = null;
+                let contributionValue: number | null = null;
+                
+                if (currentPlan?.group_plan) {
+                  contributionType = currentPlan.group_plan.employer_contribution_type;
+                  
+                  if (currentPlan.group_plan.plan_type === 'Age Banded') {
+                    if (!record.dependent_id) {
+                      // Employee
+                      contributionValue = currentPlan.group_plan.employer_contribution_value;
+                    } else if (record.dependent_relationship === 'Spouse') {
+                      contributionValue = currentPlan.group_plan.employer_spouse_contribution_value;
+                    } else if (record.dependent_relationship === 'Child') {
+                      contributionValue = currentPlan.group_plan.employer_child_contribution_value;
+                    }
+                  } else {
+                    contributionValue = currentPlan.group_plan.employer_contribution_value;
+                  }
+                  
+                  if (contributionType && contributionValue !== null && recordRate !== null) {
+                    if (contributionType === 'Percentage') {
+                      contributionAmount = recordRate * (contributionValue / 100);
+                    } else if (contributionType === 'Dollar Amount') {
+                      contributionAmount = contributionValue;
+                    }
+                  }
+                }
+
                 return (
                   <div
                     key={record.id}
@@ -1381,44 +1763,63 @@ export default function ParticipantPlanDetailPage() {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-3">
                           {isCurrent && (
                             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[var(--glass-secondary)] text-white">
                               Current
                             </span>
                           )}
+                          {/* Date Range */}
                           <span className="text-sm text-[var(--glass-gray-medium)]">
-                            {formatDisplayDate(record.created_at)}
+                            {record.group_option_rate?.start_date 
+                              ? `${formatDisplayDate(record.group_option_rate.start_date)} - ${record.group_option_rate.end_date ? formatDisplayDate(record.group_option_rate.end_date) : 'Active'}`
+                              : 'N/A'}
                           </span>
-                          {record.group_option_rate?.start_date && (
-                            <span className="text-sm text-[var(--glass-gray-medium)]">
-                              Rate Period: {formatDisplayDate(record.group_option_rate.start_date)}
-                              {record.group_option_rate.end_date && ` - ${formatDisplayDate(record.group_option_rate.end_date)}`}
-                              {!record.group_option_rate.end_date && ' - Present'}
-                            </span>
-                          )}
                         </div>
-                        {recordRate !== null && (
-                          <div className="flex items-center gap-6 mt-2">
+                        
+                        {/* Grid layout for all fields */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-2">
+                          {/* Rate - First */}
+                          {recordRate !== null && (
                             <div>
-                              <p className="text-xs text-[var(--glass-gray-medium)]">Rate</p>
-                              <p className="text-xl font-bold text-[var(--glass-black-dark)]">
+                              <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Rate</p>
+                              <p className="text-sm font-semibold text-[var(--glass-black-dark)]">
                                 ${recordRate.toFixed(2)}
                               </p>
                               {record.rate_override !== null && (
-                                <p className="text-xs text-[var(--glass-gray-medium)] mt-1">Custom override</p>
+                                <p className="text-xs text-[var(--glass-gray-medium)] mt-0.5">Custom override</p>
                               )}
                             </div>
-                            {employeeAmount !== null && (
-                              <div>
-                                <p className="text-xs text-[var(--glass-gray-medium)]">Employee Responsible</p>
-                                <p className="text-xl font-bold text-[var(--glass-black-dark)]">
-                                  ${employeeAmount.toFixed(2)}
-                                </p>
-                              </div>
-                            )}
+                          )}
+                          
+                          {/* Option - Second */}
+                          <div>
+                            <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Option</p>
+                            <p className="text-sm font-semibold text-[var(--glass-black-dark)]">
+                              {record.plan_option_name || 'N/A'}
+                            </p>
                           </div>
-                        )}
+                          
+                          {/* Contribution Amount */}
+                          {contributionAmount !== null && (
+                            <div>
+                              <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Contribution Amount</p>
+                              <p className="text-sm font-semibold text-[var(--glass-black-dark)]">
+                                ${contributionAmount.toFixed(2)}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {/* Employee Responsible Amount - Span 2 columns to make it wider */}
+                          {employeeAmount !== null && (
+                            <div className="md:col-span-2">
+                              <p className="text-xs text-[var(--glass-gray-medium)] mb-1 whitespace-nowrap">Employee Responsible Amount</p>
+                              <p className="text-sm font-semibold text-[var(--glass-black-dark)]">
+                                ${employeeAmount.toFixed(2)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                       {isEditMode && (
                         <button
@@ -1522,7 +1923,7 @@ export default function ParticipantPlanDetailPage() {
               
               <div className="space-y-4">
                 <div className="glass-card rounded-xl p-4 bg-white/5 border border-white/10">
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Rate Start Date</p>
                       <p className="text-lg font-semibold text-[var(--glass-black-dark)]">
@@ -1603,6 +2004,36 @@ export default function ParticipantPlanDetailPage() {
                 className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeletingRate ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Plan Option Change Confirmation Dialog */}
+      {showPlanOptionChangeDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={handleCancelPlanOptionChange}>
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4 text-center">
+              Change Plan Option
+            </h3>
+            <p className="text-[var(--glass-gray-medium)] mb-6 text-center">
+              You are changing the Plan option. The change will not take place until group policy renewal.
+            </p>
+            <div className="flex gap-4 justify-center">
+              <button
+                type="button"
+                onClick={handleCancelPlanOptionChange}
+                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleContinuePlanOptionChange}
+                className="px-6 py-3 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300"
+              >
+                Continue
               </button>
             </div>
           </div>
