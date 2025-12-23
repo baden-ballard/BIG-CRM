@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import GlassCard from '../../../../../components/GlassCard';
 import GlassButton from '../../../../../components/GlassButton';
@@ -13,6 +13,9 @@ interface GroupPlan {
   termination_date: string | null;
   plan_type: string | null;
   employer_contribution_type: string | null;
+  employer_contribution_value?: string | number | null;
+  employer_spouse_contribution_value?: string | number | null;
+  employer_child_contribution_value?: string | number | null;
   group: {
     id: string;
     name: string;
@@ -66,8 +69,8 @@ interface PlanOptionWithRates extends PlanOption {
 
 export default function NewParticipantPlanPage() {
   const router = useRouter();
-  const params = use(useParams());
-  const participantId = (params.id ?? '') as string;
+  const params = useParams();
+  const participantId = (params?.id ?? '') as string;
 
   const [participant, setParticipant] = useState<any>(null);
   const [planType, setPlanType] = useState<'group' | 'medicare'>('group');
@@ -238,7 +241,7 @@ export default function NewParticipantPlanPage() {
         throw error;
       }
 
-      setGroupPlans((data || []) as GroupPlan[]);
+      setGroupPlans((data || []) as unknown as GroupPlan[]);
     } catch (error: any) {
       console.error('Error fetching group plans:', error);
     } finally {
@@ -270,7 +273,7 @@ export default function NewParticipantPlanPage() {
         throw error;
       }
 
-      setMedicarePlans((data || []) as MedicarePlan[]);
+      setMedicarePlans((data || []) as unknown as MedicarePlan[]);
     } catch (error: any) {
       console.error('Error fetching Medicare plans:', error);
     }
@@ -309,19 +312,23 @@ export default function NewParticipantPlanPage() {
     if (plan.plan_type === 'Age Banded') {
       if (!dependentId) {
         // Employee
-        return plan.employer_contribution_value ?? null;
+        const value = plan.employer_contribution_value;
+        return value != null ? Number(value) : null;
       } else {
         // Look up the dependent to determine relationship
         const dependent = dependents.find(dep => dep.id === dependentId);
         if (dependent?.relationship === 'Spouse') {
-          return plan.employer_spouse_contribution_value ?? null;
+          const value = plan.employer_spouse_contribution_value;
+          return value != null ? Number(value) : null;
         } else if (dependent?.relationship === 'Child') {
-          return plan.employer_child_contribution_value ?? null;
+          const value = plan.employer_child_contribution_value;
+          return value != null ? Number(value) : null;
         }
       }
     } else {
       // For non-Age Banded plans, use the standard contribution value
-      return plan.employer_contribution_value ?? null;
+      const value = plan.employer_contribution_value;
+      return value != null ? Number(value) : null;
     }
     
     return null;
