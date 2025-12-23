@@ -81,6 +81,10 @@ export default function NewParticipantPlanPage() {
     rate_override: '',
     include_type: '', // For Age Banded plans: 'Employee', 'Employee and Spouse', 'Employee and Children'
     effective_date: '', // Effective date for the participant plan
+    employer_contribution_type: '', // For Composite plans
+    class_1_contribution_amount: '',
+    class_2_contribution_amount: '',
+    class_3_contribution_amount: '',
   });
   const [loadingParticipant, setLoadingParticipant] = useState(false);
   const [loadingPlans, setLoadingPlans] = useState(false);
@@ -117,6 +121,10 @@ export default function NewParticipantPlanPage() {
       rate_override: '',
       include_type: '',
       effective_date: '',
+      employer_contribution_type: '',
+      class_1_contribution_amount: '',
+      class_2_contribution_amount: '',
+      class_3_contribution_amount: '',
     });
     setPlanOptions([]);
   }, [planType]);
@@ -924,6 +932,22 @@ export default function NewParticipantPlanPage() {
             insertData.rate_override = parseFloat(formData.rate_override);
           }
 
+          // Add Composite plan fields if plan type is Composite
+          if (selectedPlan?.plan_type === 'Composite') {
+            if (formData.employer_contribution_type) {
+              insertData.employer_contribution_type = formData.employer_contribution_type;
+            }
+            if (formData.class_1_contribution_amount) {
+              insertData.class_1_contribution_amount = parseFloat(formData.class_1_contribution_amount);
+            }
+            if (formData.class_2_contribution_amount) {
+              insertData.class_2_contribution_amount = parseFloat(formData.class_2_contribution_amount);
+            }
+            if (formData.class_3_contribution_amount) {
+              insertData.class_3_contribution_amount = parseFloat(formData.class_3_contribution_amount);
+            }
+          }
+
           const { data: insertedPlan, error: insertError } = await supabase
             .from('participant_group_plans')
             .insert([insertData])
@@ -1299,6 +1323,85 @@ export default function NewParticipantPlanPage() {
                   The active rate for {formData.effective_date} will be automatically linked
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Composite Plan Fields - Show when plan type is Composite and option is selected */}
+          {selectedPlan?.plan_type === 'Composite' && formData.plan_option_id && (
+            <div className="space-y-4 pt-4 border-t border-white/20">
+              <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-4">
+                Composite Plan Contribution Information
+              </h3>
+              
+              {/* Employer Contribution Type */}
+              <div>
+                <label htmlFor="employer_contribution_type" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Employer Contribution Type
+                </label>
+                <select
+                  id="employer_contribution_type"
+                  name="employer_contribution_type"
+                  value={formData.employer_contribution_type}
+                  onChange={handleChange}
+                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                >
+                  <option value="">Select contribution type</option>
+                  <option value="Dollar">Dollar</option>
+                  <option value="Percentage">Percentage</option>
+                </select>
+              </div>
+
+              {/* Class Contribution Amounts */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="class_1_contribution_amount" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Class 1 Contribution Amount
+                  </label>
+                  <input
+                    type="number"
+                    id="class_1_contribution_amount"
+                    name="class_1_contribution_amount"
+                    value={formData.class_1_contribution_amount}
+                    onChange={handleChange}
+                    step="0.01"
+                    min="0"
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    placeholder="Enter amount"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="class_2_contribution_amount" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Class 2 Contribution Amount
+                  </label>
+                  <input
+                    type="number"
+                    id="class_2_contribution_amount"
+                    name="class_2_contribution_amount"
+                    value={formData.class_2_contribution_amount}
+                    onChange={handleChange}
+                    step="0.01"
+                    min="0"
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    placeholder="Enter amount"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="class_3_contribution_amount" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                    Class 3 Contribution Amount
+                  </label>
+                  <input
+                    type="number"
+                    id="class_3_contribution_amount"
+                    name="class_3_contribution_amount"
+                    value={formData.class_3_contribution_amount}
+                    onChange={handleChange}
+                    step="0.01"
+                    min="0"
+                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    placeholder="Enter amount"
+                  />
+                </div>
+              </div>
             </div>
           )}
 

@@ -38,11 +38,20 @@ export default function NewPlanPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [groupName, setGroupName] = useState<string>('');
+  const [numberOfClasses, setNumberOfClasses] = useState<number>(1);
   const [loadingPrograms, setLoadingPrograms] = useState(false);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [loadingGroup, setLoadingGroup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [newOptions, setNewOptions] = useState<Array<{ id: string; option: string; rate: string }>>([]);
+  const [newOptions, setNewOptions] = useState<Array<{ 
+    id: string; 
+    option: string; 
+    rate: string;
+    employer_contribution_type: string;
+    class_1_contribution_amount: string;
+    class_2_contribution_amount: string;
+    class_3_contribution_amount: string;
+  }>>([]);
   const [showCsvUploadModal, setShowCsvUploadModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvRateStartDate, setCsvRateStartDate] = useState('');
@@ -62,7 +71,7 @@ export default function NewPlanPage() {
 
       const { data, error } = await supabase
         .from('groups')
-        .select('name')
+        .select('name, number_of_classes')
         .eq('id', groupId)
         .single();
 
@@ -72,6 +81,11 @@ export default function NewPlanPage() {
 
       if (data) {
         setGroupName(data.name);
+        // Ensure number_of_classes is a number (it might come as string from DB)
+        const numClasses = typeof data.number_of_classes === 'number' 
+          ? data.number_of_classes 
+          : parseInt(data.number_of_classes, 10) || 1;
+        setNumberOfClasses(numClasses);
       }
     } catch (error) {
       console.error('Error fetching group:', error);
@@ -158,7 +172,15 @@ export default function NewPlanPage() {
 
   const handleAddOption = () => {
     const newId = `temp-${Date.now()}-${Math.random()}`;
-    setNewOptions([...newOptions, { id: newId, option: '', rate: '' }]);
+    setNewOptions([...newOptions, { 
+      id: newId, 
+      option: '', 
+      rate: '',
+      employer_contribution_type: '',
+      class_1_contribution_amount: '',
+      class_2_contribution_amount: '',
+      class_3_contribution_amount: '',
+    }]);
   };
 
   const handleRemoveOption = (id: string) => {
@@ -166,7 +188,7 @@ export default function NewPlanPage() {
     setNewOptions(updatedOptions);
   };
 
-  const handleOptionChange = (id: string, field: 'option' | 'rate', value: string) => {
+  const handleOptionChange = (id: string, field: 'option' | 'rate' | 'employer_contribution_type' | 'class_1_contribution_amount' | 'class_2_contribution_amount' | 'class_3_contribution_amount', value: string) => {
     setNewOptions(newOptions.map(opt => 
       opt.id === id ? { ...opt, [field]: value } : opt
     ));
@@ -331,6 +353,10 @@ export default function NewPlanPage() {
           id: `temp-${Date.now()}-${Math.random()}-${row.option}`,
           option: row.option,
           rate: row.rate.toString(),
+          employer_contribution_type: '',
+          class_1_contribution_amount: '',
+          class_2_contribution_amount: '',
+          class_3_contribution_amount: '',
         }));
 
       if (newOptionsFromFile.length === 0) {
@@ -378,6 +404,59 @@ export default function NewPlanPage() {
         throw new Error('Plan type is required');
       }
 
+      // Validate employer contribution type if plan type is "Age Banded"
+      if (formData.plan_type === 'Age Banded' && !formData.employer_contribution_type) {
+        throw new Error('Employer Contribution Type is required when plan type is "Age Banded"');
+      }
+
+      // Validate plan options - both option and rate are required
+      if (newOptions.length > 0) {
+        const invalidOptions = newOptions.filter(opt => {
+          const hasOption = opt.option && opt.option.trim() !== '';
+          const hasRate = opt.rate && opt.rate.trim() !== '' && !isNaN(parseFloat(opt.rate));
+          
+          // For Composite plans, also validate contribution fields
+          if (formData.plan_type === 'Composite') {
+            const hasContributionType = opt.employer_contribution_type && opt.employer_contribution_type.trim() !== '';
+            const hasClass1 = opt.class_1_contribution_amount && opt.class_1_contribution_amount.trim() !== '' && !isNaN(parseFloat(opt.class_1_contribution_amount));
+            // Only require Class 2 if numberOfClasses >= 2
+            const hasClass2 = numberOfClasses < 2 || (opt.class_2_contribution_amount && opt.class_2_contribution_amount.trim() !== '' && !isNaN(parseFloat(opt.class_2_contribution_amount)));
+            // Only require Class 3 if numberOfClasses >= 3
+            const hasClass3 = numberOfClasses < 3 || (opt.class_3_contribution_amount && opt.class_3_contribution_amount.trim() !== '' && !isNaN(parseFloat(opt.class_3_contribution_amount)));
+            
+            const isValid = hasOption && hasRate && hasContributionType && hasClass1 && hasClass2 && hasClass3;
+            
+            if (!isValid) {
+              console.log('Invalid Composite option:', {
+                option: opt.option,
+                hasOption,
+                hasRate,
+                hasContributionType,
+                hasClass1,
+                hasClass2,
+                hasClass3,
+                numberOfClasses,
+                class1Value: opt.class_1_contribution_amount,
+                class2Value: opt.class_2_contribution_amount,
+                class3Value: opt.class_3_contribution_amount
+              });
+            }
+            
+            return !isValid;
+          }
+          
+          return !hasOption || !hasRate;
+        });
+
+        if (invalidOptions.length > 0) {
+          if (formData.plan_type === 'Composite') {
+            throw new Error('All plan options must have Plan Option, Rate, Employer Contribution Type, and all shown Class Contribution Amounts filled in');
+          } else {
+            throw new Error('All plan options must have both Plan Option and Rate filled in');
+          }
+        }
+      }
+
       // Prepare data for insertion
       const insertData: any = {
         group_id: groupId,
@@ -423,10 +502,40 @@ export default function NewPlanPage() {
         
         if (validOptions.length > 0) {
           // Insert options
-          const optionsToInsert = validOptions.map(opt => ({
-            group_plan_id: data.id,
-            option: opt.option.trim(),
-          }));
+          const optionsToInsert = validOptions.map(opt => {
+            const optionData: any = {
+              group_plan_id: data.id,
+              option: opt.option.trim(),
+            };
+            
+            // Add Composite plan fields if plan type is Composite
+            if (formData.plan_type === 'Composite') {
+              // Always include these fields if they exist (even if empty, they'll be null)
+              if (opt.employer_contribution_type && opt.employer_contribution_type.trim() !== '') {
+                optionData.employer_contribution_type = opt.employer_contribution_type;
+              }
+              if (opt.class_1_contribution_amount && opt.class_1_contribution_amount.trim() !== '') {
+                const class1Value = parseFloat(opt.class_1_contribution_amount);
+                if (!isNaN(class1Value)) {
+                  optionData.class_1_contribution_amount = class1Value;
+                }
+              }
+              if (numberOfClasses >= 2 && opt.class_2_contribution_amount && opt.class_2_contribution_amount.trim() !== '') {
+                const class2Value = parseFloat(opt.class_2_contribution_amount);
+                if (!isNaN(class2Value)) {
+                  optionData.class_2_contribution_amount = class2Value;
+                }
+              }
+              if (numberOfClasses >= 3 && opt.class_3_contribution_amount && opt.class_3_contribution_amount.trim() !== '') {
+                const class3Value = parseFloat(opt.class_3_contribution_amount);
+                if (!isNaN(class3Value)) {
+                  optionData.class_3_contribution_amount = class3Value;
+                }
+              }
+            }
+            
+            return optionData;
+          });
 
           const { data: insertedOptions, error: optionsError } = await supabase
             .from('group_plan_options')
@@ -487,16 +596,27 @@ export default function NewPlanPage() {
         >
           <span>←</span> Back to Group
         </button>
-        <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
-          Add New Plan
-        </h1>
-        <p className="text-[var(--glass-gray-medium)]">
-          Create a new plan for this group
-        </p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
+              Add New Plan
+            </h1>
+            <p className="text-[var(--glass-gray-medium)]">
+              Create a new plan for this group
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push(`/groups/${groupId}`)}
+            className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
 
       <GlassCard>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {/* Row: Plan Name and Group Name */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Plan Name */}
@@ -659,18 +779,20 @@ export default function NewPlanPage() {
             </select>
           </div>
 
-          {/* Row 4: Employer Contribution */}
+          {/* Row 4: Employer Contribution - Only show if plan type is "Age Banded" */}
+          {formData.plan_type === 'Age Banded' && (
           <div className="space-y-6">
             {/* Employer Contribution Type */}
             <div>
               <label htmlFor="employer_contribution_type" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                Employer Contribution Type
+                Employer Contribution Type *
               </label>
               <select
                 id="employer_contribution_type"
                 name="employer_contribution_type"
                 value={formData.employer_contribution_type}
                 onChange={handleChange}
+                required
                 className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
               >
                 <option value="">Select contribution type</option>
@@ -679,7 +801,8 @@ export default function NewPlanPage() {
               </select>
             </div>
 
-            {/* Employer Contribution Fields - Always Visible */}
+            {/* Employer Contribution Fields - Only show if plan type is "Age Banded" */}
+            {formData.plan_type === 'Age Banded' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
               {/* Employer Employee Contribution Value */}
               <div className="flex flex-col">
@@ -698,8 +821,9 @@ export default function NewPlanPage() {
                 />
               </div>
 
-              {/* Employer Spouse Contribution Value */}
-              <div className="flex flex-col">
+              {/* Employer Spouse Contribution Value - Only show if plan type is "Age Banded" */}
+              {formData.plan_type === 'Age Banded' && (
+                <div className="flex flex-col">
                 <label htmlFor="employer_spouse_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
                   Employer Spouse Contribution Value
                 </label>
@@ -714,9 +838,11 @@ export default function NewPlanPage() {
                   placeholder="Enter spouse contribution"
                 />
               </div>
+              )}
 
-              {/* Employer Child Contribution Value */}
-              <div className="flex flex-col">
+              {/* Employer Child Contribution Value - Only show if plan type is "Age Banded" */}
+              {formData.plan_type === 'Age Banded' && (
+                <div className="flex flex-col">
                 <label htmlFor="employer_child_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
                   Employer Child Contribution Value
                 </label>
@@ -731,8 +857,11 @@ export default function NewPlanPage() {
                   placeholder="Enter child contribution"
                 />
               </div>
+              )}
             </div>
+            )}
           </div>
+          )}
 
           {/* Plan Options Section */}
           <div className="pt-6 border-t border-white/20">
@@ -777,25 +906,27 @@ export default function NewPlanPage() {
                       <div className="flex items-center gap-4">
                         <div className="flex-1">
                           <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                            Plan Option
+                            Plan Option *
                           </label>
                           <input
                             type="text"
                             value={newOption.option}
                             onChange={(e) => handleOptionChange(newOption.id, 'option', e.target.value)}
+                            required
                             className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                             placeholder="Enter plan option"
                           />
                         </div>
                         <div className="flex-1">
                           <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                            Rate
+                            Rate *
                           </label>
                           <input
                             type="number"
                             step="0.01"
                             value={newOption.rate}
                             onChange={(e) => handleOptionChange(newOption.id, 'rate', e.target.value)}
+                            required
                             className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                             placeholder="Enter rate"
                           />
@@ -808,6 +939,95 @@ export default function NewPlanPage() {
                           Remove
                         </button>
                       </div>
+
+                      {/* Composite Plan Fields - Show when plan type is Composite */}
+                      {formData.plan_type === 'Composite' && (
+                        <div className="pt-4 border-t border-white/20 space-y-4">
+                          {/* Employer Contribution Type */}
+                          <div>
+                            <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                              Employer Contribution Type *
+                            </label>
+                            <select
+                              value={newOption.employer_contribution_type}
+                              onChange={(e) => handleOptionChange(newOption.id, 'employer_contribution_type', e.target.value)}
+                              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                              required
+                            >
+                              <option value="">Select contribution type</option>
+                              <option value="Dollar">Dollar</option>
+                              <option value="Percentage">Percentage</option>
+                            </select>
+                          </div>
+
+                          {/* Class Contribution Amounts - Dynamic based on number of classes */}
+                          {numberOfClasses > 0 && (
+                            <div className={`grid grid-cols-1 gap-4 ${
+                              numberOfClasses === 1 ? 'md:grid-cols-1' : 
+                              numberOfClasses === 2 ? 'md:grid-cols-2' : 
+                              'md:grid-cols-3'
+                            }`}>
+                              {/* Debug: Show numberOfClasses value */}
+                              {/* numberOfClasses: {numberOfClasses} */}
+                              
+                              {/* Always show Class 1 if at least 1 class */}
+                              <div>
+                                <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                  Class 1 Contribution Amount *
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={newOption.class_1_contribution_amount}
+                                  onChange={(e) => handleOptionChange(newOption.id, 'class_1_contribution_amount', e.target.value)}
+                                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                  placeholder="Enter amount"
+                                  required
+                                />
+                              </div>
+                              
+                              {/* Show Class 2 if 2 or more classes */}
+                              {numberOfClasses >= 2 && (
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 2 Contribution Amount *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={newOption.class_2_contribution_amount}
+                                    onChange={(e) => handleOptionChange(newOption.id, 'class_2_contribution_amount', e.target.value)}
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                    required
+                                  />
+                                </div>
+                              )}
+                              
+                              {/* Show Class 3 if 3 classes */}
+                              {numberOfClasses >= 3 && (
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 3 Contribution Amount *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={newOption.class_3_contribution_amount}
+                                    onChange={(e) => handleOptionChange(newOption.id, 'class_3_contribution_amount', e.target.value)}
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -823,13 +1043,6 @@ export default function NewPlanPage() {
 
           {/* Form Actions */}
           <div className="flex items-center justify-end gap-4 pt-4 border-t border-white/20">
-            <button
-              type="button"
-              onClick={() => router.push(`/groups/${groupId}`)}
-              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
-            >
-              Cancel
-            </button>
             <GlassButton
               type="submit"
               variant="primary"

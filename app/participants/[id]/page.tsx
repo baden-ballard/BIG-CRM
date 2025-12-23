@@ -142,6 +142,10 @@ export default function ParticipantDetailPage() {
     rate_override: string;
     include_type: string; // For Age Banded plans: 'Employee', 'Employee and Spouse', 'Employee and Children'
     effective_date: string; // Effective date for the participant plan
+    employer_contribution_type: string; // For Composite plans
+    class_1_contribution_amount: string;
+    class_2_contribution_amount: string;
+    class_3_contribution_amount: string;
   }>>([]);
   const [newMedicarePlans, setNewMedicarePlans] = useState<Array<{
     id: string;
@@ -1381,6 +1385,10 @@ export default function ParticipantDetailPage() {
       rate_override: '',
       include_type: '',
       effective_date: '',
+      employer_contribution_type: '',
+      class_1_contribution_amount: '',
+      class_2_contribution_amount: '',
+      class_3_contribution_amount: '',
     }]);
     setShowAddPlanForm(true);
   };
@@ -1825,6 +1833,22 @@ export default function ParticipantDetailPage() {
           }
           if (newPlan.rate_override) {
             insertData.rate_override = parseFloat(newPlan.rate_override);
+          }
+
+          // Add Composite plan fields if plan type is Composite
+          if (selectedPlan?.plan_type === 'Composite') {
+            if (newPlan.employer_contribution_type) {
+              insertData.employer_contribution_type = newPlan.employer_contribution_type;
+            }
+            if (newPlan.class_1_contribution_amount) {
+              insertData.class_1_contribution_amount = parseFloat(newPlan.class_1_contribution_amount);
+            }
+            if (newPlan.class_2_contribution_amount) {
+              insertData.class_2_contribution_amount = parseFloat(newPlan.class_2_contribution_amount);
+            }
+            if (newPlan.class_3_contribution_amount) {
+              insertData.class_3_contribution_amount = parseFloat(newPlan.class_3_contribution_amount);
+            }
           }
 
           allRecordsToInsert.push(insertData);
@@ -3207,14 +3231,15 @@ export default function ParticipantDetailPage() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
                                     <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                                      Plan Option
+                                      Plan Option {selectedPlan?.plan_type === 'Composite' && '*'}
                                     </label>
                                     <select
                                       value={newPlan.group_plan_option_id}
                                       onChange={(e) => handlePlanChange(newPlan.id, 'group_plan_option_id', e.target.value)}
                                       className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                      required={selectedPlan?.plan_type === 'Composite'}
                                     >
-                                      <option value="">Select an option</option>
+                                      <option value="">Select an option {selectedPlan?.plan_type === 'Composite' ? '(required)' : '(optional)'}</option>
                                       {planOptions.map((option: any) => (
                                         <option key={option.id} value={option.id}>
                                           {option.option}
@@ -3295,6 +3320,77 @@ export default function ParticipantDetailPage() {
                               </div>
                             );
                           })()}
+
+                          {/* Composite Plan Fields - Show when plan type is Composite and option is selected */}
+                          {selectedPlan?.plan_type === 'Composite' && newPlan.group_plan_option_id && (
+                            <div className="space-y-4 pt-4 border-t border-white/20">
+                              <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-4">
+                                Composite Plan Contribution Information
+                              </h3>
+                              
+                              {/* Employer Contribution Type */}
+                              <div>
+                                <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                  Employer Contribution Type
+                                </label>
+                                <select
+                                  value={newPlan.employer_contribution_type}
+                                  onChange={(e) => handlePlanChange(newPlan.id, 'employer_contribution_type', e.target.value)}
+                                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                >
+                                  <option value="">Select contribution type</option>
+                                  <option value="Dollar">Dollar</option>
+                                  <option value="Percentage">Percentage</option>
+                                </select>
+                              </div>
+
+                              {/* Class Contribution Amounts */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 1 Contribution Amount
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={newPlan.class_1_contribution_amount}
+                                    onChange={(e) => handlePlanChange(newPlan.id, 'class_1_contribution_amount', e.target.value)}
+                                    step="0.01"
+                                    min="0"
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 2 Contribution Amount
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={newPlan.class_2_contribution_amount}
+                                    onChange={(e) => handlePlanChange(newPlan.id, 'class_2_contribution_amount', e.target.value)}
+                                    step="0.01"
+                                    min="0"
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 3 Contribution Amount
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={newPlan.class_3_contribution_amount}
+                                    onChange={(e) => handlePlanChange(newPlan.id, 'class_3_contribution_amount', e.target.value)}
+                                    step="0.01"
+                                    min="0"
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Rate Override */}
                           <div>

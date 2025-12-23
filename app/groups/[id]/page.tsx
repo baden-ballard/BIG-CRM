@@ -1207,7 +1207,7 @@ export default function GroupDetailPage() {
                         <div
                           key={plan.id}
                           className="glass-card rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer"
-                          onClick={() => router.push(`/groups/${groupId}/plans/${plan.id}`)}
+                          onClick={() => router.push(`/groups/${groupId}/plans/${plan.id}?view=true`)}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex-1">
@@ -1260,7 +1260,7 @@ export default function GroupDetailPage() {
                         <div
                           key={plan.id}
                           className="glass-card rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer opacity-75"
-                          onClick={() => router.push(`/groups/${groupId}/plans/${plan.id}`)}
+                          onClick={() => router.push(`/groups/${groupId}/plans/${plan.id}?view=true`)}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex-1">

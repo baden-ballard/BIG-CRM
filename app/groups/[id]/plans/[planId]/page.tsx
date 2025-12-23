@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import GlassCard from '../../../../../components/GlassCard';
 import GlassButton from '../../../../../components/GlassButton';
@@ -40,8 +40,10 @@ interface Provider {
 export default function ViewGroupPlanPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const groupId = (params?.id ?? '') as string;
   const planId = (params?.planId ?? '') as string;
+  const isViewMode = searchParams?.get('view') === 'true';
 
   const [plan, setPlan] = useState<GroupPlan | null>(null);
   const [formData, setFormData] = useState({
@@ -60,18 +62,60 @@ export default function ViewGroupPlanPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [groupName, setGroupName] = useState<string>('');
+  const [numberOfClasses, setNumberOfClasses] = useState<number>(1);
   const [loadingPrograms, setLoadingPrograms] = useState(false);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [loadingGroup, setLoadingGroup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [newOptions, setNewOptions] = useState<Array<{ id: string; option: string; rate: string }>>([]);
+  const [newOptions, setNewOptions] = useState<Array<{ 
+    id: string; 
+    option: string; 
+    rate: string;
+    rate_start_date: string;
+    employer_contribution_type: string;
+    class_1_contribution_amount: string;
+    class_2_contribution_amount: string;
+    class_3_contribution_amount: string;
+  }>>([]);
+  const [existingOptions, setExistingOptions] = useState<Array<{
+    id: string;
+    option: string;
+    employer_contribution_type: string | null;
+    class_1_contribution_amount: number | null;
+    class_2_contribution_amount: number | null;
+    class_3_contribution_amount: number | null;
+    activeRate: { id: string; rate: number; start_date: string; end_date: string | null } | null;
+    rateHistory: Array<{
+      id: string;
+      rate: number;
+      start_date: string;
+      end_date: string | null;
+      employer_contribution_type: string | null;
+      class_1_contribution_amount: number | null;
+      class_2_contribution_amount: number | null;
+      class_3_contribution_amount: number | null;
+      employer_employee_contribution_value: number | null;
+      employer_spouse_contribution_value: number | null;
+      employer_child_contribution_value: number | null;
+    }>;
+  }>>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
   const [showCsvUploadModal, setShowCsvUploadModal] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvRateStartDate, setCsvRateStartDate] = useState('');
   const [csvRateEndDate, setCsvRateEndDate] = useState('');
   const [isUploadingRates, setIsUploadingRates] = useState(false);
+  const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
+  const [editedOptionName, setEditedOptionName] = useState('');
+  const [editedRate, setEditedRate] = useState('');
+  const [editedRateStartDate, setEditedRateStartDate] = useState('');
+  const [editedEmployerContributionType, setEditedEmployerContributionType] = useState('');
+  const [editedClass1ContributionAmount, setEditedClass1ContributionAmount] = useState('');
+  const [editedClass2ContributionAmount, setEditedClass2ContributionAmount] = useState('');
+  const [editedClass3ContributionAmount, setEditedClass3ContributionAmount] = useState('');
+  const [isSavingRate, setIsSavingRate] = useState(false);
 
   useEffect(() => {
     if (planId && groupId) {
@@ -188,6 +232,9 @@ export default function ViewGroupPlanPage() {
         employer_child_contribution_value: planData.employer_child_contribution_value?.toString() || '',
       };
       setFormData(initialFormData);
+      
+      // Fetch plan options after plan is loaded
+      await fetchPlanOptions();
     } catch (err: any) {
       console.error('Error fetching plan:', err);
       setError(err.message || 'Failed to load plan');
@@ -203,7 +250,7 @@ export default function ViewGroupPlanPage() {
 
       const { data, error } = await supabase
         .from('groups')
-        .select('name')
+        .select('name, number_of_classes')
         .eq('id', groupId)
         .single();
 
@@ -213,6 +260,11 @@ export default function ViewGroupPlanPage() {
 
       if (data) {
         setGroupName(data.name);
+        // Ensure number_of_classes is a number (it might come as string from DB)
+        const numClasses = typeof data.number_of_classes === 'number' 
+          ? data.number_of_classes 
+          : parseInt(data.number_of_classes, 10) || 1;
+        setNumberOfClasses(numClasses);
       }
     } catch (error) {
       console.error('Error fetching group:', error);
@@ -298,7 +350,17 @@ export default function ViewGroupPlanPage() {
 
   const handleAddOption = () => {
     const newId = `temp-${Date.now()}-${Math.random()}`;
-    setNewOptions([...newOptions, { id: newId, option: '', rate: '' }]);
+    const defaultStartDate = formData.effective_date || new Date().toISOString().split('T')[0];
+    setNewOptions([...newOptions, { 
+      id: newId, 
+      option: '', 
+      rate: '',
+      rate_start_date: defaultStartDate,
+      employer_contribution_type: '',
+      class_1_contribution_amount: '',
+      class_2_contribution_amount: '',
+      class_3_contribution_amount: '',
+    }]);
   };
 
   const handleRemoveOption = (id: string) => {
@@ -306,10 +368,248 @@ export default function ViewGroupPlanPage() {
     setNewOptions(updatedOptions);
   };
 
-  const handleOptionChange = (id: string, field: 'option' | 'rate', value: string) => {
+  const handleOptionChange = (id: string, field: 'option' | 'rate' | 'rate_start_date' | 'employer_contribution_type' | 'class_1_contribution_amount' | 'class_2_contribution_amount' | 'class_3_contribution_amount', value: string) => {
     setNewOptions(newOptions.map(opt => 
       opt.id === id ? { ...opt, [field]: value } : opt
     ));
+  };
+
+  const handleStartEditOption = (optionId: string, optionName: string, rate: number, rateStartDate?: string, employerContributionType?: string | null, class1Amount?: number | null, class2Amount?: number | null, class3Amount?: number | null) => {
+    setEditingOptionId(optionId);
+    setEditedOptionName(optionName);
+    setEditedRate(rate.toString());
+    setEditedRateStartDate(rateStartDate || formData.effective_date || new Date().toISOString().split('T')[0]);
+    setEditedEmployerContributionType(employerContributionType || '');
+    setEditedClass1ContributionAmount(class1Amount?.toString() || '');
+    setEditedClass2ContributionAmount(class2Amount?.toString() || '');
+    setEditedClass3ContributionAmount(class3Amount?.toString() || '');
+  };
+
+  const handleCancelEditOption = () => {
+    setEditingOptionId(null);
+    setEditedOptionName('');
+    setEditedRate('');
+    setEditedRateStartDate('');
+    setEditedEmployerContributionType('');
+    setEditedClass1ContributionAmount('');
+    setEditedClass2ContributionAmount('');
+    setEditedClass3ContributionAmount('');
+  };
+
+  const handleSaveRate = async (optionId: string) => {
+    if (!editedOptionName.trim()) {
+      alert('Option name is required');
+      return;
+    }
+
+    if (!editedRate.trim() || isNaN(parseFloat(editedRate))) {
+      alert('Valid rate is required');
+      return;
+    }
+
+    // Validate Composite plan fields if plan type is Composite
+    if (formData.plan_type === 'Composite') {
+      if (!editedEmployerContributionType.trim()) {
+        alert('Employer Contribution Type is required for Composite plans');
+        return;
+      }
+      if (!editedClass1ContributionAmount.trim() || isNaN(parseFloat(editedClass1ContributionAmount))) {
+        alert('Class 1 Contribution Amount is required');
+        return;
+      }
+      if (numberOfClasses >= 2 && (!editedClass2ContributionAmount.trim() || isNaN(parseFloat(editedClass2ContributionAmount)))) {
+        alert('Class 2 Contribution Amount is required');
+        return;
+      }
+      if (numberOfClasses >= 3 && (!editedClass3ContributionAmount.trim() || isNaN(parseFloat(editedClass3ContributionAmount)))) {
+        alert('Class 3 Contribution Amount is required');
+        return;
+      }
+    }
+
+    setIsSavingRate(true);
+    try {
+      const option = existingOptions.find(opt => opt.id === optionId);
+      if (!option) {
+        throw new Error('Option not found');
+      }
+
+      // Prepare option update data
+      const optionUpdateData: any = {
+        option: editedOptionName.trim(),
+      };
+
+      // Add Composite plan fields if plan type is Composite
+      if (formData.plan_type === 'Composite') {
+        if (editedEmployerContributionType.trim()) {
+          optionUpdateData.employer_contribution_type = editedEmployerContributionType;
+        }
+        if (editedClass1ContributionAmount.trim()) {
+          const class1Value = parseFloat(editedClass1ContributionAmount);
+          if (!isNaN(class1Value)) {
+            optionUpdateData.class_1_contribution_amount = class1Value;
+          }
+        }
+        if (numberOfClasses >= 2 && editedClass2ContributionAmount.trim()) {
+          const class2Value = parseFloat(editedClass2ContributionAmount);
+          if (!isNaN(class2Value)) {
+            optionUpdateData.class_2_contribution_amount = class2Value;
+          }
+        }
+        if (numberOfClasses >= 3 && editedClass3ContributionAmount.trim()) {
+          const class3Value = parseFloat(editedClass3ContributionAmount);
+          if (!isNaN(class3Value)) {
+            optionUpdateData.class_3_contribution_amount = class3Value;
+          }
+        }
+      }
+
+      // Update option
+      const { error: optionError } = await supabase
+        .from('group_plan_options')
+        .update(optionUpdateData)
+        .eq('id', optionId);
+
+      if (optionError) {
+        throw optionError;
+      }
+
+      // Insert new rate record (to trigger rate history automation)
+      // The database trigger will automatically close the previous rate
+      const rateValue = parseFloat(editedRate);
+      const startDate = editedRateStartDate || formData.effective_date || new Date().toISOString().split('T')[0];
+      
+      const { error: rateError } = await supabase
+        .from('group_option_rates')
+        .insert({
+          group_plan_option_id: optionId,
+          rate: rateValue,
+          start_date: startDate,
+          end_date: null,
+        });
+
+      if (rateError) {
+        throw rateError;
+      }
+
+      // Refresh options to show updated values
+      await fetchPlanOptions();
+      
+      // Reset edit state
+      handleCancelEditOption();
+      
+      alert('Option updated successfully!');
+    } catch (error: any) {
+      console.error('Error saving option:', error);
+      alert(`Failed to save option: ${error.message || 'Please try again.'}`);
+    } finally {
+      setIsSavingRate(false);
+    }
+  };
+
+  const fetchPlanOptions = async () => {
+    if (!planId) return;
+    
+    try {
+      setLoadingOptions(true);
+      const { data: options, error } = await supabase
+        .from('group_plan_options')
+        .select(`
+          id,
+          group_plan_id,
+          option,
+          employer_contribution_type,
+          class_1_contribution_amount,
+          class_2_contribution_amount,
+          class_3_contribution_amount
+        `)
+        .eq('group_plan_id', planId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      // Fetch all rate history records for each option
+      const optionsWithRates = await Promise.all(
+        (options || []).map(async (opt) => {
+          const { data: rates } = await supabase
+            .from('group_option_rates')
+            .select(`
+              id, 
+              rate, 
+              start_date, 
+              end_date,
+              employer_contribution_type,
+              class_1_contribution_amount,
+              class_2_contribution_amount,
+              class_3_contribution_amount,
+              employer_employee_contribution_value,
+              employer_spouse_contribution_value,
+              employer_child_contribution_value
+            `)
+            .eq('group_plan_option_id', opt.id)
+            .order('start_date', { ascending: false });
+
+          // Find active rate (no end_date or end_date in future)
+          const today = new Date().toISOString().split('T')[0];
+          const activeRate = rates?.find(rate => 
+            !rate.end_date || rate.end_date >= today
+          ) || rates?.[0] || null;
+
+          const rateHistoryArray = (rates || []).map(rate => ({
+              id: rate.id,
+              rate: parseFloat(rate.rate) || 0,
+              start_date: rate.start_date,
+              end_date: rate.end_date,
+              employer_contribution_type: rate.employer_contribution_type,
+              class_1_contribution_amount: rate.class_1_contribution_amount ? parseFloat(rate.class_1_contribution_amount) : null,
+              class_2_contribution_amount: rate.class_2_contribution_amount ? parseFloat(rate.class_2_contribution_amount) : null,
+              class_3_contribution_amount: rate.class_3_contribution_amount ? parseFloat(rate.class_3_contribution_amount) : null,
+              employer_employee_contribution_value: rate.employer_employee_contribution_value ? parseFloat(rate.employer_employee_contribution_value) : null,
+              employer_spouse_contribution_value: rate.employer_spouse_contribution_value ? parseFloat(rate.employer_spouse_contribution_value) : null,
+              employer_child_contribution_value: rate.employer_child_contribution_value ? parseFloat(rate.employer_child_contribution_value) : null,
+            }));
+          
+          return {
+            ...opt,
+            activeRate: activeRate ? {
+              id: activeRate.id,
+              rate: activeRate.rate,
+              start_date: activeRate.start_date,
+              end_date: activeRate.end_date
+            } : null,
+            rateHistory: rateHistoryArray
+          };
+        })
+      );
+
+      setExistingOptions(optionsWithRates);
+      console.log('Fetched options with rate history:', optionsWithRates);
+    } catch (err: any) {
+      console.error('Error fetching plan options:', err);
+    } finally {
+      setLoadingOptions(false);
+    }
+  };
+
+  // Helper function to calculate rate status based on dates
+  const calculateRateStatus = (startDate: string, endDate: string | null): 'Planned' | 'Current' | 'Ended' => {
+    const today = new Date().toISOString().split('T')[0];
+    const start = new Date(startDate).toISOString().split('T')[0];
+    
+    // If start date is in the future, it's Planned
+    if (start > today) {
+      return 'Planned';
+    }
+    
+    // If end date is null or in the future, it's Current
+    if (!endDate || endDate >= today) {
+      return 'Current';
+    }
+    
+    // Otherwise it's Ended
+    return 'Ended';
   };
 
   // Helper function to parse rate values, handling various formats
@@ -465,12 +765,18 @@ export default function ViewGroupPlanPage() {
       // Add parsed options to newOptions state
       // Merge with existing options, avoiding duplicates
       const existingOptions = new Set(newOptions.map(opt => opt.option.toLowerCase()));
+      const defaultStartDate = formData.effective_date || new Date().toISOString().split('T')[0];
       const newOptionsFromFile = csvData
         .filter(row => !existingOptions.has(row.option.toLowerCase()))
         .map(row => ({
           id: `temp-${Date.now()}-${Math.random()}-${row.option}`,
           option: row.option,
           rate: row.rate.toString(),
+          rate_start_date: defaultStartDate,
+          employer_contribution_type: '',
+          class_1_contribution_amount: '',
+          class_2_contribution_amount: '',
+          class_3_contribution_amount: '',
         }));
 
       if (newOptionsFromFile.length === 0) {
@@ -497,9 +803,11 @@ export default function ViewGroupPlanPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isViewMode) return; // Prevent submission in view mode
     setIsSubmitting(true);
 
     try {
+      
       if (!planId) {
         throw new Error('Plan ID is required');
       }
@@ -566,14 +874,89 @@ export default function ViewGroupPlanPage() {
 
       // Save new options if any
       if (newOptions.length > 0) {
-        const validOptions = newOptions.filter(opt => opt.option.trim() !== '');
+        // Validate plan options - both option and rate are required
+        const invalidOptions = newOptions.filter(opt => {
+          const hasOption = opt.option && opt.option.trim() !== '';
+          const hasRate = opt.rate && opt.rate.trim() !== '' && !isNaN(parseFloat(opt.rate));
+          
+          // For Composite plans, also validate contribution fields
+          if (formData.plan_type === 'Composite') {
+            const hasContributionType = opt.employer_contribution_type && opt.employer_contribution_type.trim() !== '';
+            const hasClass1 = opt.class_1_contribution_amount && opt.class_1_contribution_amount.trim() !== '' && !isNaN(parseFloat(opt.class_1_contribution_amount));
+            // Only require Class 2 if numberOfClasses >= 2
+            const hasClass2 = numberOfClasses < 2 || (opt.class_2_contribution_amount && opt.class_2_contribution_amount.trim() !== '' && !isNaN(parseFloat(opt.class_2_contribution_amount)));
+            // Only require Class 3 if numberOfClasses >= 3
+            const hasClass3 = numberOfClasses < 3 || (opt.class_3_contribution_amount && opt.class_3_contribution_amount.trim() !== '' && !isNaN(parseFloat(opt.class_3_contribution_amount)));
+            
+            const isValid = hasOption && hasRate && hasContributionType && hasClass1 && hasClass2 && hasClass3;
+            
+            if (!isValid) {
+              console.log('Invalid Composite option:', {
+                option: opt.option,
+                hasOption,
+                hasRate,
+                hasContributionType,
+                hasClass1,
+                hasClass2,
+                hasClass3,
+                numberOfClasses,
+                class1Value: opt.class_1_contribution_amount,
+                class2Value: opt.class_2_contribution_amount,
+                class3Value: opt.class_3_contribution_amount
+              });
+            }
+            
+            return !isValid;
+          }
+          
+          return !hasOption || !hasRate;
+        });
+
+        if (invalidOptions.length > 0) {
+          if (formData.plan_type === 'Composite') {
+            throw new Error('All plan options must have Plan Option, Rate, Employer Contribution Type, and all shown Class Contribution Amounts filled in');
+          } else {
+            throw new Error('All plan options must have both Plan Option and Rate filled in');
+          }
+        }
         
+        const validOptions = newOptions.filter(opt => opt.option && opt.option.trim() !== '');
         if (validOptions.length > 0) {
           // Insert options
-          const optionsToInsert = validOptions.map(opt => ({
-            group_plan_id: planId,
-            option: opt.option.trim(),
-          }));
+          const optionsToInsert = validOptions.map(opt => {
+            const optionData: any = {
+              group_plan_id: planId,
+              option: opt.option.trim(),
+            };
+            
+            // Add Composite plan fields if plan type is Composite
+            if (formData.plan_type === 'Composite') {
+              // Always include these fields if they exist (even if empty, they'll be null)
+              if (opt.employer_contribution_type && opt.employer_contribution_type.trim() !== '') {
+                optionData.employer_contribution_type = opt.employer_contribution_type;
+              }
+              if (opt.class_1_contribution_amount && opt.class_1_contribution_amount.trim() !== '') {
+                const class1Value = parseFloat(opt.class_1_contribution_amount);
+                if (!isNaN(class1Value)) {
+                  optionData.class_1_contribution_amount = class1Value;
+                }
+              }
+              if (numberOfClasses >= 2 && opt.class_2_contribution_amount && opt.class_2_contribution_amount.trim() !== '') {
+                const class2Value = parseFloat(opt.class_2_contribution_amount);
+                if (!isNaN(class2Value)) {
+                  optionData.class_2_contribution_amount = class2Value;
+                }
+              }
+              if (numberOfClasses >= 3 && opt.class_3_contribution_amount && opt.class_3_contribution_amount.trim() !== '') {
+                const class3Value = parseFloat(opt.class_3_contribution_amount);
+                if (!isNaN(class3Value)) {
+                  optionData.class_3_contribution_amount = class3Value;
+                }
+              }
+            }
+            
+            return optionData;
+          });
 
           const { data: insertedOptions, error: optionsError } = await supabase
             .from('group_plan_options')
@@ -581,20 +964,21 @@ export default function ViewGroupPlanPage() {
             .select();
 
           if (optionsError) {
+            console.error('Error inserting options:', optionsError);
             throw optionsError;
           }
 
           // If plan type is Composite or Age Banded, create rate records
           if ((formData.plan_type === 'Composite' || formData.plan_type === 'Age Banded') && insertedOptions) {
-            const effectiveDate = formData.effective_date || new Date().toISOString().split('T')[0];
             const ratesToInsert = insertedOptions
               .map((insertedOpt, index) => {
                 const originalOpt = validOptions[index];
                 if (originalOpt.rate && !isNaN(parseFloat(originalOpt.rate))) {
+                  const startDate = originalOpt.rate_start_date || formData.effective_date || new Date().toISOString().split('T')[0];
                   return {
                     group_plan_option_id: insertedOpt.id,
                     rate: parseFloat(originalOpt.rate),
-                    start_date: effectiveDate,
+                    start_date: startDate,
                     end_date: null,
                   };
                 }
@@ -617,6 +1001,9 @@ export default function ViewGroupPlanPage() {
 
       // Refresh plan data
       await fetchPlan();
+      
+      // Refresh plan options to show newly added ones
+      await fetchPlanOptions();
       
       // Clear new options
       setNewOptions([]);
@@ -668,16 +1055,36 @@ export default function ViewGroupPlanPage() {
         >
           <span>←</span> Back to Group
         </button>
-        <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
-          {plan.plan_name}
-        </h1>
-        <p className="text-[var(--glass-gray-medium)]">
-          View and edit group plan details
-        </p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
+              {plan.plan_name}
+            </h1>
+            <p className="text-[var(--glass-gray-medium)]">
+              {isViewMode ? 'View group plan details' : 'View and edit group plan details'}
+            </p>
+          </div>
+          {isViewMode ? (
+            <GlassButton
+              variant="primary"
+              onClick={() => router.push(`/groups/${groupId}/plans/${planId}`)}
+            >
+              Edit Plan
+            </GlassButton>
+          ) : (
+            <button
+              type="button"
+              onClick={() => router.push(`/groups/${groupId}/plans/${planId}?view=true`)}
+              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
 
       <GlassCard>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" noValidate>
           {/* Row: Plan Name and Group Name */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Plan Name */}
@@ -692,7 +1099,8 @@ export default function ViewGroupPlanPage() {
                 required
                 value={formData.plan_name}
                 onChange={handleChange}
-                className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                disabled={isViewMode}
+                className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                 placeholder="Enter plan name"
               />
             </div>
@@ -727,8 +1135,8 @@ export default function ViewGroupPlanPage() {
                 value={formData.program_id}
                 onChange={handleChange}
                 required
-                className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                disabled={loadingPrograms}
+                disabled={isViewMode || loadingPrograms}
+                className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
               >
                 <option value="">Select program</option>
                 {programs.length === 0 ? (
@@ -754,8 +1162,8 @@ export default function ViewGroupPlanPage() {
                 value={formData.provider_id}
                 onChange={handleChange}
                 required
-                className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
-                disabled={loadingProviders}
+                disabled={isViewMode || loadingProviders}
+                className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
               >
                 <option value="">Select provider</option>
                 {providers.map((provider) => (
@@ -782,7 +1190,8 @@ export default function ViewGroupPlanPage() {
                   value={formData.effective_date}
                   onChange={handleChange}
                   required
-                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                  disabled={isViewMode}
+                  className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                 />
                 <div className="calendar-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -807,7 +1216,8 @@ export default function ViewGroupPlanPage() {
                   name="termination_date"
                   value={formData.termination_date}
                   onChange={handleChange}
-                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                  disabled={isViewMode}
+                  className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                 />
                 <div className="calendar-icon">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -832,7 +1242,8 @@ export default function ViewGroupPlanPage() {
               value={formData.plan_type}
               onChange={handleChange}
               required
-              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+              disabled={isViewMode}
+              className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
             >
               <option value="">Select plan type</option>
               <option value="Age Banded">Age Banded</option>
@@ -840,7 +1251,8 @@ export default function ViewGroupPlanPage() {
             </select>
           </div>
 
-          {/* Row 4: Employer Contribution */}
+          {/* Row 4: Employer Contribution - Only show if plan type is "Age Banded" */}
+          {formData.plan_type === 'Age Banded' && (
           <div className="space-y-6">
             {/* Employer Contribution Type */}
             <div>
@@ -852,7 +1264,8 @@ export default function ViewGroupPlanPage() {
                 name="employer_contribution_type"
                 value={formData.employer_contribution_type}
                 onChange={handleChange}
-                className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                disabled={isViewMode}
+                className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
               >
                 <option value="">Select contribution type</option>
                 <option value="Percentage">Percentage</option>
@@ -860,7 +1273,8 @@ export default function ViewGroupPlanPage() {
               </select>
             </div>
 
-            {/* Employer Contribution Fields - Always Visible */}
+            {/* Employer Contribution Fields - Only show if plan type is "Age Banded" */}
+            {formData.plan_type === 'Age Banded' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
               {/* Employer Employee Contribution Value */}
               <div className="flex flex-col">
@@ -874,13 +1288,15 @@ export default function ViewGroupPlanPage() {
                   value={formData.employer_contribution_value}
                   onChange={handleChange}
                   step="0.01"
-                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                  disabled={isViewMode}
+                  className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                   placeholder="Enter employee contribution"
                 />
               </div>
 
-              {/* Employer Spouse Contribution Value */}
-              <div className="flex flex-col">
+              {/* Employer Spouse Contribution Value - Only show if plan type is "Age Banded" */}
+              {formData.plan_type === 'Age Banded' && (
+                <div className="flex flex-col">
                 <label htmlFor="employer_spouse_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
                   Employer Spouse Contribution Value
                 </label>
@@ -888,16 +1304,19 @@ export default function ViewGroupPlanPage() {
                   type="number"
                   id="employer_spouse_contribution_value"
                   name="employer_spouse_contribution_value"
-                  value={formData.employer_spouse_contribution_value}
-                  onChange={handleChange}
-                  step="0.01"
-                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    value={formData.employer_spouse_contribution_value}
+                    onChange={handleChange}
+                    step="0.01"
+                    disabled={isViewMode}
+                    className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                   placeholder="Enter spouse contribution"
                 />
               </div>
+              )}
 
-              {/* Employer Child Contribution Value */}
-              <div className="flex flex-col">
+              {/* Employer Child Contribution Value - Only show if plan type is "Age Banded" */}
+              {formData.plan_type === 'Age Banded' && (
+                <div className="flex flex-col">
                 <label htmlFor="employer_child_contribution_value" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2 min-h-[2.5rem]">
                   Employer Child Contribution Value
                 </label>
@@ -905,15 +1324,19 @@ export default function ViewGroupPlanPage() {
                   type="number"
                   id="employer_child_contribution_value"
                   name="employer_child_contribution_value"
-                  value={formData.employer_child_contribution_value}
-                  onChange={handleChange}
-                  step="0.01"
-                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                    value={formData.employer_child_contribution_value}
+                    onChange={handleChange}
+                    step="0.01"
+                    disabled={isViewMode}
+                    className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${isViewMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                   placeholder="Enter child contribution"
                 />
               </div>
+              )}
             </div>
+            )}
           </div>
+          )}
 
           {/* Plan Options Section */}
           <div className="pt-6 border-t border-white/20">
@@ -921,33 +1344,35 @@ export default function ViewGroupPlanPage() {
               <h2 className="text-2xl font-bold text-[var(--glass-black-dark)]">
                 Plan Options
               </h2>
-              <div className="flex items-center gap-3">
-                <GlassButton
-                  variant="primary"
-                  type="button"
-                  onClick={() => {
-                    // Set default start date when opening modal
-                    const defaultDate = formData.effective_date || new Date().toISOString().split('T')[0];
-                    setCsvRateStartDate(defaultDate);
-                    setShowCsvUploadModal(true);
-                  }}
-                >
-                  Add Rates
-                </GlassButton>
-                <GlassButton
-                  variant="primary"
-                  type="button"
-                  onClick={handleAddOption}
-                >
-                  {newOptions.length === 0 
-                    ? '+ Add Option' 
-                    : '+ Add Another Option'}
-                </GlassButton>
-              </div>
+              {!isViewMode && (
+                <div className="flex items-center gap-3">
+                  <GlassButton
+                    variant="primary"
+                    type="button"
+                    onClick={() => {
+                      // Set default start date when opening modal
+                      const defaultDate = formData.effective_date || new Date().toISOString().split('T')[0];
+                      setCsvRateStartDate(defaultDate);
+                      setShowCsvUploadModal(true);
+                    }}
+                  >
+                    Add Rates
+                  </GlassButton>
+                  <GlassButton
+                    variant="primary"
+                    type="button"
+                    onClick={handleAddOption}
+                  >
+                    {newOptions.length === 0 
+                      ? '+ Add Option' 
+                      : '+ Add Another Option'}
+                  </GlassButton>
+                </div>
+              )}
             </div>
 
             {/* New Options Form Section */}
-            {newOptions.length > 0 && (
+            {!isViewMode && newOptions.length > 0 && (
               <div className="mb-6 space-y-4">
                 {newOptions.map((newOption) => (
                   <div
@@ -981,6 +1406,17 @@ export default function ViewGroupPlanPage() {
                             placeholder="Enter rate"
                           />
                         </div>
+                        <div className="flex-1">
+                          <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                            Rate Start Date
+                          </label>
+                          <input
+                            type="date"
+                            value={newOption.rate_start_date}
+                            onChange={(e) => handleOptionChange(newOption.id, 'rate_start_date', e.target.value)}
+                            className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                          />
+                        </div>
                         <button
                           type="button"
                           onClick={() => handleRemoveOption(newOption.id)}
@@ -989,37 +1425,471 @@ export default function ViewGroupPlanPage() {
                           Remove
                         </button>
                       </div>
+
+                      {/* Composite Plan Fields - Show when plan type is Composite */}
+                      {formData.plan_type === 'Composite' && (
+                        <div className="pt-4 border-t border-white/20 space-y-4">
+                          {/* Employer Contribution Type */}
+                          <div>
+                            <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                              Employer Contribution Type *
+                            </label>
+                            <select
+                              value={newOption.employer_contribution_type}
+                              onChange={(e) => handleOptionChange(newOption.id, 'employer_contribution_type', e.target.value)}
+                              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                              required
+                            >
+                              <option value="">Select contribution type</option>
+                              <option value="Dollar">Dollar</option>
+                              <option value="Percentage">Percentage</option>
+                            </select>
+                          </div>
+
+                          {/* Class Contribution Amounts - Dynamic based on number of classes */}
+                          {numberOfClasses > 0 && (
+                            <div className={`grid grid-cols-1 gap-4 ${
+                              numberOfClasses === 1 ? 'md:grid-cols-1' : 
+                              numberOfClasses === 2 ? 'md:grid-cols-2' : 
+                              'md:grid-cols-3'
+                            }`}>
+                              {/* Always show Class 1 if at least 1 class */}
+                              <div>
+                                <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                  Class 1 Contribution Amount *
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={newOption.class_1_contribution_amount}
+                                  onChange={(e) => handleOptionChange(newOption.id, 'class_1_contribution_amount', e.target.value)}
+                                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                  placeholder="Enter amount"
+                                  required
+                                />
+                              </div>
+                              
+                              {/* Show Class 2 if 2 or more classes */}
+                              {numberOfClasses >= 2 && (
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 2 Contribution Amount *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={newOption.class_2_contribution_amount}
+                                    onChange={(e) => handleOptionChange(newOption.id, 'class_2_contribution_amount', e.target.value)}
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                    required
+                                  />
+                                </div>
+                              )}
+                              
+                              {/* Show Class 3 if 3 classes */}
+                              {numberOfClasses >= 3 && (
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 3 Contribution Amount *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={newOption.class_3_contribution_amount}
+                                    onChange={(e) => handleOptionChange(newOption.id, 'class_3_contribution_amount', e.target.value)}
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                    required
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
 
-            {newOptions.length === 0 && (
+            {/* Display existing options */}
+            {existingOptions.length > 0 && (
+              <div className="mb-6 space-y-4">
+                <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-4">
+                  Existing Plan Options ({existingOptions.length})
+                </h3>
+                {existingOptions.map((opt) => (
+                  <div
+                    key={opt.id}
+                    className="glass-card rounded-xl p-4 bg-green-500/10 border border-green-500/20"
+                  >
+                    {editingOptionId === opt.id ? (
+                      // Edit mode
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                              Plan Option
+                            </label>
+                            <input
+                              type="text"
+                              value={editedOptionName}
+                              onChange={(e) => setEditedOptionName(e.target.value)}
+                              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                              placeholder="Enter plan option"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                              Rate
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editedRate}
+                              onChange={(e) => setEditedRate(e.target.value)}
+                              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                              placeholder="Enter rate"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                              Rate Start Date
+                            </label>
+                            <input
+                              type="date"
+                              value={editedRateStartDate}
+                              onChange={(e) => setEditedRateStartDate(e.target.value)}
+                              className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleCancelEditOption}
+                            disabled={isSavingRate}
+                            className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRate(opt.id)}
+                            disabled={isSavingRate}
+                            className="px-4 py-3 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isSavingRate ? 'Saving...' : 'Save Rate'}
+                          </button>
+                        </div>
+
+                        {/* Composite Plan Fields - Show when plan type is Composite */}
+                        {formData.plan_type === 'Composite' && (
+                          <div className="pt-4 border-t border-white/20 space-y-4">
+                            {/* Employer Contribution Type */}
+                            <div>
+                              <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                Employer Contribution Type *
+                              </label>
+                              <select
+                                value={editedEmployerContributionType}
+                                onChange={(e) => setEditedEmployerContributionType(e.target.value)}
+                                className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                required
+                              >
+                                <option value="">Select contribution type</option>
+                                <option value="Dollar">Dollar</option>
+                                <option value="Percentage">Percentage</option>
+                              </select>
+                            </div>
+
+                            {/* Class Contribution Amounts - Dynamic based on number of classes */}
+                            {numberOfClasses > 0 && (
+                              <div className={`grid grid-cols-1 gap-4 ${
+                                numberOfClasses === 1 ? 'md:grid-cols-1' : 
+                                numberOfClasses === 2 ? 'md:grid-cols-2' : 
+                                'md:grid-cols-3'
+                              }`}>
+                                {/* Always show Class 1 if at least 1 class */}
+                                <div>
+                                  <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                    Class 1 Contribution Amount *
+                                  </label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={editedClass1ContributionAmount}
+                                    onChange={(e) => setEditedClass1ContributionAmount(e.target.value)}
+                                    className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                    placeholder="Enter amount"
+                                    required
+                                  />
+                                </div>
+                                
+                                {/* Show Class 2 if 2 or more classes */}
+                                {numberOfClasses >= 2 && (
+                                  <div>
+                                    <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                      Class 2 Contribution Amount *
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={editedClass2ContributionAmount}
+                                      onChange={(e) => setEditedClass2ContributionAmount(e.target.value)}
+                                      className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                      placeholder="Enter amount"
+                                      required
+                                    />
+                                  </div>
+                                )}
+                                
+                                {/* Show Class 3 if 3 classes */}
+                                {numberOfClasses >= 3 && (
+                                  <div>
+                                    <label className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                                      Class 3 Contribution Amount *
+                                    </label>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={editedClass3ContributionAmount}
+                                      onChange={(e) => setEditedClass3ContributionAmount(e.target.value)}
+                                      className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                                      placeholder="Enter amount"
+                                      required
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      // View mode
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-[var(--glass-black-dark)]">{opt.option}</p>
+                          {!isViewMode && (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditOption(
+                                opt.id, 
+                                opt.option, 
+                                opt.activeRate?.rate || 0, 
+                                opt.activeRate?.start_date,
+                                opt.employer_contribution_type,
+                                opt.class_1_contribution_amount,
+                                opt.class_2_contribution_amount,
+                                opt.class_3_contribution_amount
+                              )}
+                              className="px-4 py-2 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap ml-4"
+                            >
+                              Edit Option
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* Rate Section - Current Rate */}
+                        <div className="pt-4 border-t border-white/20">
+                          <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
+                            Rate
+                          </h4>
+                          {(() => {
+                            const currentRates = opt.rateHistory?.filter(rateRecord => {
+                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
+                              return status === 'Current';
+                            }) || [];
+                            
+                            if (currentRates.length > 0) {
+                              // Sort by start_date descending to get the most recent current rate first
+                              const sortedCurrentRates = [...currentRates].sort((a, b) => 
+                                new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+                              );
+                              const currentRate = sortedCurrentRates[0];
+                              
+                              return (
+                                <div className="glass-card rounded-lg p-3 border bg-green-500/10 border-green-500/20">
+                                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+                                    <div>
+                                      <span className="font-semibold">Status: </span>
+                                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-700">
+                                        Current
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold">Rate Date Start: </span>
+                                      <span>{new Date(currentRate.start_date).toLocaleDateString()}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold">Rate End Date: </span>
+                                      <span>{currentRate.end_date ? new Date(currentRate.end_date).toLocaleDateString() : 'N/A'}</span>
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold">Contribution Type: </span>
+                                      <span>{currentRate.employer_contribution_type || 'N/A'}</span>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 text-xs text-[var(--glass-gray-medium)]">
+                                    <span className="font-semibold">Rate: </span>
+                                    <span>${currentRate.rate.toFixed(2)}</span>
+                                    {currentRate.class_1_contribution_amount !== null && (
+                                      <span className="ml-4">
+                                        <span className="font-semibold">Class 1: </span>
+                                        <span>${currentRate.class_1_contribution_amount.toFixed(2)}</span>
+                                      </span>
+                                    )}
+                                    {currentRate.class_2_contribution_amount !== null && (
+                                      <span className="ml-4">
+                                        <span className="font-semibold">Class 2: </span>
+                                        <span>${currentRate.class_2_contribution_amount.toFixed(2)}</span>
+                                      </span>
+                                    )}
+                                    {currentRate.class_3_contribution_amount !== null && (
+                                      <span className="ml-4">
+                                        <span className="font-semibold">Class 3: </span>
+                                        <span>${currentRate.class_3_contribution_amount.toFixed(2)}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <p className="text-sm text-[var(--glass-gray-medium)]">No current rate found.</p>
+                              );
+                            }
+                          })()}
+                        </div>
+
+                        {/* Rate History Section - Planned and Ended Rates */}
+                        <div className="pt-4 border-t border-white/20">
+                          <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
+                            Rate History
+                          </h4>
+                          {(() => {
+                            const historyRates = opt.rateHistory?.filter(rateRecord => {
+                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
+                              return status === 'Planned' || status === 'Ended';
+                            }) || [];
+                            
+                            // Sort by start_date ascending (oldest first)
+                            const sortedHistoryRates = [...historyRates].sort((a, b) => 
+                              new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+                            );
+                            
+                            if (sortedHistoryRates.length > 0) {
+                              return (
+                                <div className="space-y-3">
+                                  {sortedHistoryRates.map((rateRecord) => {
+                                    const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
+                                    const statusColors = {
+                                      Planned: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
+                                      Ended: 'bg-gray-500/10 border-gray-500/20 text-gray-700'
+                                    };
+                                    
+                                    return (
+                                      <div
+                                        key={rateRecord.id}
+                                        className={`glass-card rounded-lg p-3 border ${statusColors[status]}`}
+                                      >
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+                                          <div>
+                                            <span className="font-semibold">Status: </span>
+                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                              status === 'Planned' ? 'bg-blue-500/20 text-blue-700' :
+                                              'bg-gray-500/20 text-gray-700'
+                                            }`}>
+                                              {status}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="font-semibold">Rate Date Start: </span>
+                                            <span>{new Date(rateRecord.start_date).toLocaleDateString()}</span>
+                                          </div>
+                                          <div>
+                                            <span className="font-semibold">Rate End Date: </span>
+                                            <span>{rateRecord.end_date ? new Date(rateRecord.end_date).toLocaleDateString() : 'N/A'}</span>
+                                          </div>
+                                          <div>
+                                            <span className="font-semibold">Contribution Type: </span>
+                                            <span>{rateRecord.employer_contribution_type || 'N/A'}</span>
+                                          </div>
+                                        </div>
+                                        <div className="mt-2 text-xs text-[var(--glass-gray-medium)]">
+                                          <span className="font-semibold">Rate: </span>
+                                          <span>${rateRecord.rate.toFixed(2)}</span>
+                                          {rateRecord.class_1_contribution_amount !== null && (
+                                            <span className="ml-4">
+                                              <span className="font-semibold">Class 1: </span>
+                                              <span>${rateRecord.class_1_contribution_amount.toFixed(2)}</span>
+                                            </span>
+                                          )}
+                                          {rateRecord.class_2_contribution_amount !== null && (
+                                            <span className="ml-4">
+                                              <span className="font-semibold">Class 2: </span>
+                                              <span>${rateRecord.class_2_contribution_amount.toFixed(2)}</span>
+                                            </span>
+                                          )}
+                                          {rateRecord.class_3_contribution_amount !== null && (
+                                            <span className="ml-4">
+                                              <span className="font-semibold">Class 3: </span>
+                                              <span>${rateRecord.class_3_contribution_amount.toFixed(2)}</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <p className="text-sm text-[var(--glass-gray-medium)]">No rate history records found.</p>
+                              );
+                            }
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {newOptions.length === 0 && existingOptions.length === 0 && !loadingOptions && (
               <p className="text-[var(--glass-gray-medium)] text-center py-4">
                 No options configured for this plan. Click "+ Add Option" to add options.
+              </p>
+            )}
+
+            {loadingOptions && (
+              <p className="text-[var(--glass-gray-medium)] text-center py-4">
+                Loading options...
               </p>
             )}
           </div>
 
           {/* Form Actions */}
-          <div className="flex items-center justify-end gap-4 pt-4 border-t border-white/20">
-            <button
-              type="button"
-              onClick={() => router.push(`/groups/${groupId}`)}
-              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
-            >
-              Cancel
-            </button>
-            <GlassButton
-              type="submit"
-              variant="primary"
-              disabled={isSubmitting}
-              className={isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
-            >
-              {isSubmitting ? 'Saving...' : 'Save Plan'}
-            </GlassButton>
-          </div>
+          {!isViewMode && (
+            <div className="flex items-center justify-end gap-4 pt-4 border-t border-white/20">
+              <GlassButton
+                type="submit"
+                variant="primary"
+                disabled={isSubmitting}
+                className={isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}
+              >
+                {isSubmitting ? 'Saving...' : 'Save Plan'}
+              </GlassButton>
+            </div>
+          )}
         </form>
       </GlassCard>
 
