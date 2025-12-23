@@ -781,7 +781,7 @@ export default function ViewGroupPlanPage() {
   };
 
   // Helper function to calculate rate status based on dates
-  const calculateRateStatus = (startDate: string, endDate: string | null): 'Planned' | 'Current' | 'Ended' => {
+  const calculateRateStatus = (startDate: string, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
     const today = new Date().toISOString().split('T')[0];
     const start = new Date(startDate).toISOString().split('T')[0];
     
@@ -790,9 +790,9 @@ export default function ViewGroupPlanPage() {
       return 'Planned';
     }
     
-    // If end date is null or in the future, it's Current
+    // If end date is null or in the future, it's Active
     if (!endDate || endDate >= today) {
-      return 'Current';
+      return 'Active';
     }
     
     // Otherwise it's Ended
@@ -1262,7 +1262,7 @@ export default function ViewGroupPlanPage() {
             <button
               type="button"
               onClick={() => router.push(`/groups/${groupId}/plans/${planId}?view=true`)}
-              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+              className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
             >
               Cancel
             </button>
@@ -1607,7 +1607,7 @@ export default function ViewGroupPlanPage() {
                         <button
                           type="button"
                           onClick={() => handleRemoveOption(newOption.id)}
-                          className="px-4 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end"
+                          className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end"
                         >
                           Remove
                         </button>
@@ -1759,7 +1759,7 @@ export default function ViewGroupPlanPage() {
                             type="button"
                             onClick={handleCancelEditOption}
                             disabled={isSavingRate}
-                            className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             Cancel
                           </button>
@@ -1884,197 +1884,163 @@ export default function ViewGroupPlanPage() {
                           )}
                         </div>
                         
-                        {/* Rate Section - Current Rate */}
-                        <div className="pt-4 border-t border-white/20">
-                          <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
-                            Rate
-                          </h4>
-                          {(() => {
-                            const currentRates = opt.rateHistory?.filter(rateRecord => {
-                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
-                              return status === 'Current';
-                            }) || [];
-                            
-                            if (currentRates.length > 0) {
-                              // Sort by start_date descending to get the most recent current rate first
-                              const sortedCurrentRates = [...currentRates].sort((a, b) => 
-                                new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-                              );
-                              const currentRate = sortedCurrentRates[0];
-                              
-                              return (
-                                <div 
-                                  className="glass-card rounded-lg p-3 border bg-green-500/10 border-green-500/20 cursor-pointer hover:bg-green-500/20 transition-all"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    handleEditRate(currentRate, opt.id, opt.option);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (!isViewMode && (e.key === 'Enter' || e.key === ' ')) {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      handleEditRate(currentRate, opt.id, opt.option);
-                                    }
-                                  }}
-                                  role={!isViewMode ? "button" : undefined}
-                                  tabIndex={!isViewMode ? 0 : undefined}
-                                  title={!isViewMode ? "Click to edit rate" : ""}
-                                >
-                                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
-                                    <div>
-                                      <span className="font-semibold">Status: </span>
-                                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-700">
-                                        Current
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <span className="font-semibold">Rate Date Start: </span>
-                                      <span>{new Date(currentRate.start_date).toLocaleDateString()}</span>
-                                    </div>
-                                    <div>
-                                      <span className="font-semibold">Rate End Date: </span>
-                                      <span>{currentRate.end_date ? new Date(currentRate.end_date).toLocaleDateString() : 'N/A'}</span>
-                                    </div>
-                                    <div>
-                                      <span className="font-semibold">Contribution Type: </span>
-                                      <span>{currentRate.employer_contribution_type || 'N/A'}</span>
-                                    </div>
-                                  </div>
-                                  <div className="mt-2 text-xs text-[var(--glass-gray-medium)]">
-                                    <span className="font-semibold">Rate: </span>
-                                    <span>${currentRate.rate.toFixed(2)}</span>
-                                    {currentRate.class_1_contribution_amount !== null && (
-                                      <span className="ml-4">
-                                        <span className="font-semibold">Class 1: </span>
-                                        <span>${currentRate.class_1_contribution_amount.toFixed(2)}</span>
-                                      </span>
-                                    )}
-                                    {currentRate.class_2_contribution_amount !== null && (
-                                      <span className="ml-4">
-                                        <span className="font-semibold">Class 2: </span>
-                                        <span>${currentRate.class_2_contribution_amount.toFixed(2)}</span>
-                                      </span>
-                                    )}
-                                    {currentRate.class_3_contribution_amount !== null && (
-                                      <span className="ml-4">
-                                        <span className="font-semibold">Class 3: </span>
-                                        <span>${currentRate.class_3_contribution_amount.toFixed(2)}</span>
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            } else {
-                              return (
-                                <p className="text-sm text-[var(--glass-gray-medium)]">No current rate found.</p>
-                              );
-                            }
-                          })()}
-                        </div>
-
-                        {/* Rate History Section - Planned and Ended Rates */}
+                        {/* Rate History Section - Organized by Planned, Active, Ended */}
                         <div className="pt-4 border-t border-white/20">
                           <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
                             Rate History
                           </h4>
                           {(() => {
-                            const historyRates = opt.rateHistory?.filter(rateRecord => {
-                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
-                              return status === 'Planned' || status === 'Ended';
-                            }) || [];
+                            const allRates = opt.rateHistory || [];
                             
-                            // Sort by start_date ascending (oldest first)
-                            const sortedHistoryRates = [...historyRates].sort((a, b) => 
-                              new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
+                            // Group rates by status
+                            const plannedRates = allRates.filter(rateRecord => {
+                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
+                              return status === 'Planned';
+                            });
+                            
+                            const activeRates = allRates.filter(rateRecord => {
+                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
+                              return status === 'Active';
+                            });
+                            
+                            const endedRates = allRates.filter(rateRecord => {
+                              const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
+                              return status === 'Ended';
+                            });
+                            
+                            // Sort each group: Planned and Active by start_date descending (newest first), Ended by start_date descending (most recent ended first)
+                            const sortedPlannedRates = [...plannedRates].sort((a, b) => 
+                              new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
                             );
                             
-                            if (sortedHistoryRates.length > 0) {
-                              return (
-                                <div className="space-y-3">
-                                  {sortedHistoryRates.map((rateRecord) => {
-                                    const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
-                                    const statusColors: Record<'Planned' | 'Current' | 'Ended', string> = {
-                                      Planned: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
-                                      Current: 'bg-green-500/10 border-green-500/20 text-green-700',
-                                      Ended: 'bg-gray-500/10 border-gray-500/20 text-gray-700'
-                                    };
-                                    
-                                    return (
-                                      <div
-                                        key={rateRecord.id}
-                                        className={`glass-card rounded-lg p-3 border ${statusColors[status]} cursor-pointer hover:opacity-80 transition-all`}
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          handleEditRate(rateRecord, opt.id, opt.option);
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (!isViewMode && (e.key === 'Enter' || e.key === ' ')) {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            handleEditRate(rateRecord, opt.id, opt.option);
-                                          }
-                                        }}
-                                        role={!isViewMode ? "button" : undefined}
-                                        tabIndex={!isViewMode ? 0 : undefined}
-                                        title={!isViewMode ? "Click to edit rate" : ""}
-                                      >
-                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
-                                          <div>
-                                            <span className="font-semibold">Status: </span>
-                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                              status === 'Planned' ? 'bg-blue-500/20 text-blue-700' :
-                                              'bg-gray-500/20 text-gray-700'
-                                            }`}>
-                                              {status}
-                                            </span>
-                                          </div>
-                                          <div>
-                                            <span className="font-semibold">Rate Date Start: </span>
-                                            <span>{new Date(rateRecord.start_date).toLocaleDateString()}</span>
-                                          </div>
-                                          <div>
-                                            <span className="font-semibold">Rate End Date: </span>
-                                            <span>{rateRecord.end_date ? new Date(rateRecord.end_date).toLocaleDateString() : 'N/A'}</span>
-                                          </div>
-                                          <div>
-                                            <span className="font-semibold">Contribution Type: </span>
-                                            <span>{rateRecord.employer_contribution_type || 'N/A'}</span>
-                                          </div>
-                                        </div>
-                                        <div className="mt-2 text-xs text-[var(--glass-gray-medium)]">
-                                          <span className="font-semibold">Rate: </span>
-                                          <span>${rateRecord.rate.toFixed(2)}</span>
-                                          {rateRecord.class_1_contribution_amount !== null && (
-                                            <span className="ml-4">
-                                              <span className="font-semibold">Class 1: </span>
-                                              <span>${rateRecord.class_1_contribution_amount.toFixed(2)}</span>
-                                            </span>
-                                          )}
-                                          {rateRecord.class_2_contribution_amount !== null && (
-                                            <span className="ml-4">
-                                              <span className="font-semibold">Class 2: </span>
-                                              <span>${rateRecord.class_2_contribution_amount.toFixed(2)}</span>
-                                            </span>
-                                          )}
-                                          {rateRecord.class_3_contribution_amount !== null && (
-                                            <span className="ml-4">
-                                              <span className="font-semibold">Class 3: </span>
-                                              <span>${rateRecord.class_3_contribution_amount.toFixed(2)}</span>
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                            const sortedActiveRates = [...activeRates].sort((a, b) => 
+                              new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+                            );
+                            
+                            const sortedEndedRates = [...endedRates].sort((a, b) => 
+                              new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+                            );
+                            
+                            const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
+                              Planned: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
+                              Active: 'bg-green-500/10 border-green-500/20 text-green-700',
+                              Ended: 'bg-gray-500/10 border-gray-500/20 text-gray-700'
+                            };
+                            
+                            const renderRateCard = (rateRecord: any, status: 'Planned' | 'Active' | 'Ended') => (
+                              <div
+                                key={rateRecord.id}
+                                className={`glass-card rounded-lg p-3 border ${statusColors[status]} cursor-pointer hover:opacity-80 transition-all`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleEditRate(rateRecord, opt.id, opt.option);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (!isViewMode && (e.key === 'Enter' || e.key === ' ')) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleEditRate(rateRecord, opt.id, opt.option);
+                                  }
+                                }}
+                                role={!isViewMode ? "button" : undefined}
+                                tabIndex={!isViewMode ? 0 : undefined}
+                                title={!isViewMode ? "Click to edit rate" : ""}
+                              >
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
+                                  <div>
+                                    <span className="font-semibold">Status: </span>
+                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                      status === 'Planned' ? 'bg-blue-500/20 text-blue-700' :
+                                      status === 'Active' ? 'bg-green-500/20 text-green-700' :
+                                      'bg-gray-500/20 text-gray-700'
+                                    }`}>
+                                      {status}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold">Rate Date Start: </span>
+                                    <span>{new Date(rateRecord.start_date).toLocaleDateString()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold">Rate End Date: </span>
+                                    <span>{rateRecord.end_date ? new Date(rateRecord.end_date).toLocaleDateString() : 'Ongoing'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold">Contribution Type: </span>
+                                    <span>{rateRecord.employer_contribution_type || 'N/A'}</span>
+                                  </div>
                                 </div>
-                              );
-                            } else {
+                                <div className="mt-2 text-xs text-[var(--glass-gray-medium)]">
+                                  <span className="font-semibold">Rate: </span>
+                                  <span>${rateRecord.rate.toFixed(2)}</span>
+                                  {rateRecord.class_1_contribution_amount !== null && (
+                                    <span className="ml-4">
+                                      <span className="font-semibold">Class 1: </span>
+                                      <span>${rateRecord.class_1_contribution_amount.toFixed(2)}</span>
+                                    </span>
+                                  )}
+                                  {rateRecord.class_2_contribution_amount !== null && (
+                                    <span className="ml-4">
+                                      <span className="font-semibold">Class 2: </span>
+                                      <span>${rateRecord.class_2_contribution_amount.toFixed(2)}</span>
+                                    </span>
+                                  )}
+                                  {rateRecord.class_3_contribution_amount !== null && (
+                                    <span className="ml-4">
+                                      <span className="font-semibold">Class 3: </span>
+                                      <span>${rateRecord.class_3_contribution_amount.toFixed(2)}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                            
+                            if (allRates.length === 0) {
                               return (
                                 <p className="text-sm text-[var(--glass-gray-medium)]">No rate history records found.</p>
                               );
                             }
+                            
+                            return (
+                              <div className="space-y-4">
+                                {/* Planned Rates Section */}
+                                {sortedPlannedRates.length > 0 && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                                      Planned
+                                    </h5>
+                                    <div className="space-y-3">
+                                      {sortedPlannedRates.map(rateRecord => renderRateCard(rateRecord, 'Planned'))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Active Rates Section */}
+                                {sortedActiveRates.length > 0 && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                                      Active
+                                    </h5>
+                                    <div className="space-y-3">
+                                      {sortedActiveRates.map(rateRecord => renderRateCard(rateRecord, 'Active'))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Ended Rates Section */}
+                                {sortedEndedRates.length > 0 && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                                      Ended
+                                    </h5>
+                                    <div className="space-y-3">
+                                      {sortedEndedRates.map(rateRecord => renderRateCard(rateRecord, 'Ended'))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
                           })()}
                         </div>
                       </div>
@@ -2158,7 +2124,7 @@ export default function ViewGroupPlanPage() {
                   setCsvRateEndDate('');
                 }}
                 disabled={isUploadingRates}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -2449,7 +2415,7 @@ export default function ViewGroupPlanPage() {
                   });
                 }}
                 disabled={isSavingEditRate}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>

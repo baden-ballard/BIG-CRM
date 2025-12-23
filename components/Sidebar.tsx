@@ -56,14 +56,11 @@ export default function Sidebar({ items }: SidebarProps) {
                   font-semibold text-sm
                   ${
                     active
-                      ? 'text-[var(--glass-secondary)] bg-white/30 shadow-sm'
+                      ? 'text-white bg-[var(--glass-secondary)] shadow-sm'
                       : 'text-[var(--glass-black-dark)] hover:bg-white/20 hover:text-[var(--glass-secondary)] transition-colors duration-200'
                   }
                 `}
               >
-                {active && (
-                  <div className="absolute left-[5px] top-0 bottom-0 w-1 bg-red-500 rounded-l-xl" />
-                )}
                 {item.icon && <span className="text-xl">{item.icon}</span>}
                 <span>{item.label}</span>
               </Link>

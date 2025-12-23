@@ -57,8 +57,8 @@
 ## Color Scheme
 
 - **Primary**: White (#ffffff)
-- **Secondary**: Blue (#3b82f6)
-- **Accent**: Red (#ef4444)
+- **Secondary**: Blue (#192552)
+- **Accent**: Red (#C6282B)
 
 ## Tech Stack
 

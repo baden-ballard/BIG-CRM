@@ -878,8 +878,31 @@ export default function ParticipantPlanDetailPage() {
     );
   }
 
-  // Find the active rate record from rateHistory based on today's date
-  // A rate is "active" if today falls between start_date and end_date (or no end_date)
+  // Helper function to calculate rate status based on dates
+  const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+    if (!startDate) return 'Ended';
+    
+    const today = new Date().toISOString().split('T')[0];
+    const start = new Date(startDate).toISOString().split('T')[0];
+    
+    // If start date is in the future, it's Planned
+    if (start > today) {
+      return 'Planned';
+    }
+    
+    // If end date is null or in the future, it's Active
+    if (!endDate || endDate >= today) {
+      return 'Active';
+    }
+    
+    // Otherwise it's Ended
+    return 'Ended';
+  };
+
+  // Find the current rate record from rateHistory with priority:
+  // 1. Current rate (status "Active")
+  // 2. Next planned rate (status "Planned", earliest start_date)
+  // 3. Last rate (most recent by created_at or start_date)
   const getActiveRateRecord = (): RateHistoryRecord | null => {
     if (!currentPlan || rateHistory.length === 0) return null;
 
@@ -888,33 +911,69 @@ export default function ParticipantPlanDetailPage() {
 
     // Filter rateHistory for records matching the current plan
     const planRateRecords = rateHistory.filter(
-      record => record.participant_group_plan_id === currentPlan.id
+      record => record.participant_group_plan_id === currentPlan.id && record.group_option_rate
     );
 
-    // Find active rates (where today falls within the rate period)
-    const activeRates = planRateRecords.filter(record => {
-      if (!record.group_option_rate) return false;
+    if (planRateRecords.length === 0) return null;
 
-      const startDate = record.group_option_rate.start_date 
-        ? new Date(record.group_option_rate.start_date) 
-        : null;
-      const endDate = record.group_option_rate.end_date 
-        ? new Date(record.group_option_rate.end_date) 
-        : null;
-      
-      // Set time to start of day for accurate comparison
-      if (startDate) startDate.setHours(0, 0, 0, 0);
-      if (endDate) endDate.setHours(0, 0, 0, 0);
-      
-      const isStartValid = !startDate || today >= startDate;
-      const isEndValid = !endDate || today <= endDate;
-      return isStartValid && isEndValid;
+    // Categorize rates by status
+    const activeRates: RateHistoryRecord[] = [];
+    const plannedRates: RateHistoryRecord[] = [];
+    const endedRates: RateHistoryRecord[] = [];
+
+    planRateRecords.forEach(record => {
+      const status = calculateRateStatus(
+        record.group_option_rate?.start_date || null,
+        record.group_option_rate?.end_date || null
+      );
+
+      if (status === 'Active') {
+        activeRates.push(record);
+      } else if (status === 'Planned') {
+        plannedRates.push(record);
+      } else {
+        endedRates.push(record);
+      }
     });
 
-    // Get the most recent active rate (by created_at)
+    // Priority 1: Return the most recent active rate (by created_at)
     if (activeRates.length > 0) {
       return activeRates.reduce((latest, current) => {
         return new Date(current.created_at) > new Date(latest.created_at) ? current : latest;
+      });
+    }
+
+    // Priority 2: Return the next planned rate (earliest start_date)
+    if (plannedRates.length > 0) {
+      return plannedRates.reduce((earliest, current) => {
+        const currentStart = current.group_option_rate?.start_date 
+          ? new Date(current.group_option_rate.start_date).getTime() 
+          : Infinity;
+        const earliestStart = earliest.group_option_rate?.start_date 
+          ? new Date(earliest.group_option_rate.start_date).getTime() 
+          : Infinity;
+        return currentStart < earliestStart ? current : earliest;
+      });
+    }
+
+    // Priority 3: Return the last rate (most recent by created_at, then by start_date)
+    if (endedRates.length > 0) {
+      return endedRates.reduce((latest, current) => {
+        const currentCreated = new Date(current.created_at).getTime();
+        const latestCreated = new Date(latest.created_at).getTime();
+        
+        if (currentCreated !== latestCreated) {
+          return currentCreated > latestCreated ? current : latest;
+        }
+        
+        // If created_at is equal, compare by start_date
+        const currentStart = current.group_option_rate?.start_date 
+          ? new Date(current.group_option_rate.start_date).getTime() 
+          : 0;
+        const latestStart = latest.group_option_rate?.start_date 
+          ? new Date(latest.group_option_rate.start_date).getTime() 
+          : 0;
+        return currentStart > latestStart ? current : latest;
       });
     }
 
@@ -1354,7 +1413,7 @@ export default function ParticipantPlanDetailPage() {
               <button
                 type="button"
                 onClick={() => setPlanToDelete(currentPlan)}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
               >
                 Delete
               </button>
@@ -1698,6 +1757,46 @@ export default function ParticipantPlanDetailPage() {
                 return bCreated - aCreated;
               });
               
+              // Helper function to organize records by status
+              const organizeByStatus = (records: RateHistoryRecord[]) => {
+                const planned = records.filter(r => {
+                  const status = calculateRateStatus(
+                    r.group_option_rate?.start_date || null,
+                    r.group_option_rate?.end_date || null
+                  );
+                  return status === 'Planned';
+                });
+                
+                const active = records.filter(r => {
+                  const status = calculateRateStatus(
+                    r.group_option_rate?.start_date || null,
+                    r.group_option_rate?.end_date || null
+                  );
+                  return status === 'Active';
+                });
+                
+                const ended = records.filter(r => {
+                  const status = calculateRateStatus(
+                    r.group_option_rate?.start_date || null,
+                    r.group_option_rate?.end_date || null
+                  );
+                  return status === 'Ended';
+                });
+                
+                // Sort each group by start_date descending (newest first)
+                const sortByStartDate = (a: RateHistoryRecord, b: RateHistoryRecord) => {
+                  const aStart = a.group_option_rate?.start_date ? new Date(a.group_option_rate.start_date).getTime() : 0;
+                  const bStart = b.group_option_rate?.start_date ? new Date(b.group_option_rate.start_date).getTime() : 0;
+                  return bStart - aStart;
+                };
+                
+                return {
+                  planned: planned.sort(sortByStartDate),
+                  active: active.sort(sortByStartDate),
+                  ended: ended.sort(sortByStartDate)
+                };
+              };
+              
               // Group rate history by type (Participant, Spouse, Child)
               const participantRecords = sortedRateHistory.filter(r => !r.dependent_id);
               const spouseRecords = sortedRateHistory.filter(r => r.dependent_relationship === 'Spouse');
@@ -1712,14 +1811,21 @@ export default function ParticipantPlanDetailPage() {
                 }
                 childrenByName.get(name)!.push(record);
               });
+              
+              // Organize each group by status
+              const participantByStatus = organizeByStatus(participantRecords);
+              const spouseByStatus = organizeByStatus(spouseRecords);
 
-              const renderRateRecord = (record: RateHistoryRecord, isMostRecent: boolean = false) => {
+              const renderRateRecord = (record: RateHistoryRecord) => {
                 const recordRate = record.rate_override !== null 
                   ? record.rate_override 
                   : record.group_option_rate?.rate || null;
                 
                 const employeeAmount = calculateEmployeeResponsibleAmount(recordRate, currentPlan);
-                const isCurrent = isMostRecent && (!record.group_option_rate?.end_date);
+                const rateStatus = calculateRateStatus(
+                  record.group_option_rate?.start_date || null,
+                  record.group_option_rate?.end_date || null
+                );
 
                 // Calculate contribution amount
                 let contributionAmount: number | null = null;
@@ -1751,28 +1857,34 @@ export default function ParticipantPlanDetailPage() {
                   }
                 }
 
+                const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
+                  Planned: 'bg-blue-500/10 border-blue-500/20',
+                  Active: 'bg-green-500/10 border-green-500/20',
+                  Ended: 'bg-gray-500/10 border-gray-500/20'
+                };
+                
+                const statusBadgeColors: Record<'Planned' | 'Active' | 'Ended', string> = {
+                  Planned: 'bg-blue-500/20 text-blue-700',
+                  Active: 'bg-green-500/20 text-green-700',
+                  Ended: 'bg-gray-500/20 text-gray-700'
+                };
+
                 return (
                   <div
                     key={record.id}
                     onClick={() => setSelectedRateRecord(record)}
-                    className={`glass-card rounded-xl p-4 border cursor-pointer hover:bg-white/10 transition-colors ${
-                      isCurrent 
-                        ? 'bg-[var(--glass-secondary)]/10 border-[var(--glass-secondary)]/30' 
-                        : 'bg-white/5 border-white/10'
-                    }`}
+                    className={`glass-card rounded-xl p-4 border cursor-pointer hover:bg-white/10 transition-colors ${statusColors[rateStatus]}`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-3">
-                          {isCurrent && (
-                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[var(--glass-secondary)] text-white">
-                              Current
-                            </span>
-                          )}
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusBadgeColors[rateStatus]}`}>
+                            {rateStatus}
+                          </span>
                           {/* Date Range */}
                           <span className="text-sm text-[var(--glass-gray-medium)]">
                             {record.group_option_rate?.start_date 
-                              ? `${formatDisplayDate(record.group_option_rate.start_date)} - ${record.group_option_rate.end_date ? formatDisplayDate(record.group_option_rate.end_date) : 'Active'}`
+                              ? `${formatDisplayDate(record.group_option_rate.start_date)} - ${record.group_option_rate.end_date ? formatDisplayDate(record.group_option_rate.end_date) : 'Ongoing'}`
                               : 'N/A'}
                           </span>
                         </div>
@@ -1828,12 +1940,27 @@ export default function ParticipantPlanDetailPage() {
                             e.stopPropagation();
                             setRateToDelete(record);
                           }}
-                          className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
+                          className="flex items-center justify-center w-8 h-8 rounded-full bg-[#C6282B] hover:bg-[#A01F22] text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
                           title="Delete rate"
                         >
                           ×
                         </button>
                       )}
+                    </div>
+                  </div>
+                );
+              };
+
+              const renderStatusSection = (title: string, records: RateHistoryRecord[]) => {
+                if (records.length === 0) return null;
+                
+                return (
+                  <div>
+                    <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                      {title}
+                    </h5>
+                    <div className="space-y-3">
+                      {records.map(record => renderRateRecord(record))}
                     </div>
                   </div>
                 );
@@ -1847,10 +1974,10 @@ export default function ParticipantPlanDetailPage() {
                       <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-3">
                         Participant
                       </h3>
-                      <div className="space-y-3">
-                        {participantRecords.map((record, index) => 
-                          renderRateRecord(record, index === 0)
-                        )}
+                      <div className="space-y-4">
+                        {renderStatusSection('Planned', participantByStatus.planned)}
+                        {renderStatusSection('Active', participantByStatus.active)}
+                        {renderStatusSection('Ended', participantByStatus.ended)}
                       </div>
                     </div>
                   )}
@@ -1861,10 +1988,10 @@ export default function ParticipantPlanDetailPage() {
                       <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-3">
                         Spouse
                       </h3>
-                      <div className="space-y-3">
-                        {spouseRecords.map((record, index) => 
-                          renderRateRecord(record, index === 0)
-                        )}
+                      <div className="space-y-4">
+                        {renderStatusSection('Planned', spouseByStatus.planned)}
+                        {renderStatusSection('Active', spouseByStatus.active)}
+                        {renderStatusSection('Ended', spouseByStatus.ended)}
                       </div>
                     </div>
                   )}
@@ -1876,20 +2003,23 @@ export default function ParticipantPlanDetailPage() {
                         Children
                       </h3>
                       <div className="space-y-4">
-                        {Array.from(childrenByName.entries()).map(([childName, records]) => (
-                          <div key={childName}>
-                            {childrenByName.size > 1 && (
-                              <h4 className="text-md font-medium text-[var(--glass-black-dark)] mb-2 ml-2">
-                                {childName}
-                              </h4>
-                            )}
-                            <div className="space-y-3">
-                              {records.map((record, index) => 
-                                renderRateRecord(record, index === 0)
+                        {Array.from(childrenByName.entries()).map(([childName, records]) => {
+                          const childByStatus = organizeByStatus(records);
+                          return (
+                            <div key={childName}>
+                              {childrenByName.size > 1 && (
+                                <h4 className="text-md font-medium text-[var(--glass-black-dark)] mb-2 ml-2">
+                                  {childName}
+                                </h4>
                               )}
+                              <div className="space-y-4">
+                                {renderStatusSection('Planned', childByStatus.planned)}
+                                {renderStatusSection('Active', childByStatus.active)}
+                                {renderStatusSection('Ended', childByStatus.ended)}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1993,7 +2123,7 @@ export default function ParticipantPlanDetailPage() {
                 type="button"
                 onClick={() => setRateToDelete(null)}
                 disabled={isDeletingRate}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -2001,7 +2131,7 @@ export default function ParticipantPlanDetailPage() {
                 type="button"
                 onClick={handleDeleteRate}
                 disabled={isDeletingRate}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeletingRate ? 'Deleting...' : 'Delete'}
               </button>
@@ -2024,7 +2154,7 @@ export default function ParticipantPlanDetailPage() {
               <button
                 type="button"
                 onClick={handleCancelPlanOptionChange}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
               >
                 Cancel
               </button>
@@ -2059,7 +2189,7 @@ export default function ParticipantPlanDetailPage() {
                   }
                 }}
                 disabled={isDeletingPlan}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -2072,7 +2202,7 @@ export default function ParticipantPlanDetailPage() {
                   }
                 }}
                 disabled={isDeletingPlan}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeletingPlan ? 'Deleting...' : 'Delete'}
               </button>

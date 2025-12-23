@@ -47,17 +47,20 @@ CREATE TRIGGER update_medicare_renewals_updated_at
 -- Main function to process Medicare renewal automation
 -- This function:
 -- 1. Finds all active participants enrolled in the selected Medicare plans
--- 2. Finds the Medicare rate that matches the renewal date for each plan
--- 3. Updates participant_medicare_plans records to connect participants to the new rates
+-- 2. Finds the Medicare child rate that matches the renewal date for each plan
+-- 3. Ends active participant_medicare_plan_rates records (sets end_date to day before renewal date)
+-- 4. Creates new participant_medicare_plan_rates records with the new rate
+-- 5. Updates participant_medicare_plans records to connect participants to the new rates
 CREATE OR REPLACE FUNCTION process_medicare_renewal_automation(p_renewal_id UUID)
 RETURNS void AS $$
 DECLARE
     v_renewal RECORD;
     v_renewal_date DATE;
+    v_day_before_renewal DATE;
     v_plan RECORD;
     v_participant_plan RECORD;
     v_medicare_plan RECORD;
-    v_medicare_rate_id UUID;
+    v_medicare_child_rate_id UUID;
     v_participant RECORD;
 BEGIN
     -- Get renewal details
@@ -71,6 +74,7 @@ BEGIN
     END IF;
     
     v_renewal_date := v_renewal.renewal_date;
+    v_day_before_renewal := v_renewal_date - 1;
     
     -- Process each Medicare plan in the renewal
     FOR v_plan IN
@@ -88,18 +92,18 @@ BEGIN
             CONTINUE; -- Skip if plan not found
         END IF;
         
-        -- Find the Medicare rate that matches the renewal date
-        SELECT mr.id
-        INTO v_medicare_rate_id
-        FROM medicare_rates mr
-        WHERE mr.medicare_plan_id = v_plan.medicare_plan_id
-            AND mr.start_date <= v_renewal_date
-            AND (mr.end_date IS NULL OR mr.end_date >= v_renewal_date)
-        ORDER BY mr.start_date DESC
+        -- Find the Medicare child rate that matches the renewal date
+        SELECT mcr.id
+        INTO v_medicare_child_rate_id
+        FROM medicare_child_rates mcr
+        WHERE mcr.medicare_plan_id = v_plan.medicare_plan_id
+            AND mcr.start_date <= v_renewal_date
+            AND (mcr.end_date IS NULL OR mcr.end_date >= v_renewal_date)
+        ORDER BY mcr.start_date DESC
         LIMIT 1;
         
-        IF v_medicare_rate_id IS NULL THEN
-            RAISE WARNING 'No Medicare rate found for plan % on renewal date %', 
+        IF v_medicare_child_rate_id IS NULL THEN
+            RAISE WARNING 'No Medicare child rate found for plan % on renewal date %', 
                 v_plan.medicare_plan_id, v_renewal_date;
             CONTINUE; -- Skip this plan if no rate found
         END IF;
@@ -114,7 +118,7 @@ BEGIN
                 pmp.id,
                 pmp.participant_id,
                 pmp.medicare_plan_id,
-                pmp.medicare_rate_id as current_rate_id,
+                pmp.medicare_child_rate_id as current_rate_id,
                 p.id as participant_id_check,
                 p.dob as participant_dob
             FROM participant_medicare_plans pmp
@@ -123,11 +127,28 @@ BEGIN
                 -- Check if participant is active on renewal date
                 AND (p.termination_date IS NULL OR p.termination_date >= v_renewal_date)
         LOOP
+            -- End all active participant_medicare_plan_rates records for this participant_medicare_plan
+            UPDATE participant_medicare_plan_rates
+            SET end_date = v_day_before_renewal
+            WHERE participant_medicare_plan_id = v_participant_plan.id
+                AND end_date IS NULL;
+            
+            -- Create new participant_medicare_plan_rates record
+            INSERT INTO participant_medicare_plan_rates (
+                participant_medicare_plan_id,
+                medicare_child_rate_id,
+                start_date,
+                end_date
+            ) VALUES (
+                v_participant_plan.id,
+                v_medicare_child_rate_id,
+                v_renewal_date,
+                NULL
+            );
+            
             -- Update the participant_medicare_plans record to connect to the new rate
-            -- This updates the existing enrollment record to point to the rate that matches the renewal date
-            -- Rate history is maintained through the medicare_rates table (with start_date/end_date)
             UPDATE participant_medicare_plans
-            SET medicare_rate_id = v_medicare_rate_id,
+            SET medicare_child_rate_id = v_medicare_child_rate_id,
                 updated_at = NOW()
             WHERE id = v_participant_plan.id;
             
@@ -156,7 +177,7 @@ CREATE TRIGGER medicare_renewal_automation_trigger
     EXECUTE FUNCTION trigger_medicare_renewal_automation();
 
 -- Add comments
-COMMENT ON FUNCTION process_medicare_renewal_automation IS 'Processes Medicare renewal automation: finds active participants and connects them to new rates matching the renewal date';
+COMMENT ON FUNCTION process_medicare_renewal_automation IS 'Processes Medicare renewal automation: ends active rates in participant_medicare_plan_rates and creates new rate records for all active participants';
 COMMENT ON TABLE medicare_renewals IS 'Stores Medicare renewal records with renewal dates';
 COMMENT ON TABLE renewal_medicare_plans IS 'Junction table linking Medicare renewals to Medicare plans';
 

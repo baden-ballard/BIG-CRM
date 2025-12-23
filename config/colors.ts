@@ -7,9 +7,9 @@
 
 export const colors = {
   // Primary Colors - Modern professional blue-purple gradient
-  primary: '#6366f1', // Indigo-500
-  primaryDark: '#4f46e5', // Indigo-600
-  primaryLight: '#818cf8', // Indigo-400
+  primary: '#192552', // Custom blue
+  primaryDark: '#141d3f', // Darker blue
+  primaryLight: '#2a3a6b', // Lighter blue
   
   // Secondary Colors
   secondary: '#8b5cf6', // Violet-500
@@ -26,10 +26,10 @@ export const colors = {
   successLight: '#34d399', // Emerald-400
   warning: '#f59e0b', // Amber-500
   warningLight: '#fbbf24', // Amber-400
-  error: '#ef4444', // Red-500
-  errorLight: '#f87171', // Red-400
-  info: '#3b82f6', // Blue-500
-  infoLight: '#60a5fa', // Blue-400
+  error: '#C6282B', // Custom red
+  errorLight: '#E85C5F', // Custom red light
+  info: '#192552', // Custom blue
+  infoLight: '#2a3a6b', // Lighter blue
   
   // Neutral Colors - Refined grays
   gray50: '#f9fafb',
@@ -54,12 +54,12 @@ export const colors = {
     bgLight: 'rgba(255, 255, 255, 0.1)',
     bgMedium: 'rgba(255, 255, 255, 0.2)',
     bgDark: 'rgba(255, 255, 255, 0.05)',
-    bgPrimary: 'rgba(99, 102, 241, 0.1)', // Indigo with transparency
+    bgPrimary: 'rgba(25, 37, 82, 0.1)', // Custom blue with transparency
     borderLight: 'rgba(255, 255, 255, 0.25)',
     borderMedium: 'rgba(255, 255, 255, 0.35)',
     borderDark: 'rgba(0, 0, 0, 0.08)',
-    shadowLight: 'rgba(99, 102, 241, 0.1)',
-    shadowMedium: 'rgba(99, 102, 241, 0.15)',
+    shadowLight: 'rgba(25, 37, 82, 0.1)',
+    shadowMedium: 'rgba(25, 37, 82, 0.15)',
   },
   
   // Base Colors

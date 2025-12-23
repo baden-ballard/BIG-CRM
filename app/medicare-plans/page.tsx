@@ -189,8 +189,23 @@ export default function MedicarePlansPage() {
 
       alert('Medicare renewal added successfully! All active participants have been connected to the new rates.');
     } catch (err: any) {
-      console.error('Error adding Medicare renewal:', err);
-      alert('Failed to add Medicare renewal. Please try again.');
+      // Extract error details for better logging
+      const errorMessage = err?.message || 'Unknown error';
+      const errorCode = err?.code || 'NO_CODE';
+      const errorDetails = err?.details || '';
+      const errorHint = err?.hint || '';
+      
+      console.error('Error adding Medicare renewal:', {
+        message: errorMessage,
+        code: errorCode,
+        details: errorDetails,
+        hint: errorHint,
+        fullError: err
+      });
+      
+      // Show user-friendly error message
+      const userMessage = errorMessage || 'Failed to add Medicare renewal. Please try again.';
+      alert(`Failed to add Medicare renewal: ${userMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -343,7 +358,7 @@ export default function MedicarePlansPage() {
                   type="button"
                   onClick={handleCancelRenewal}
                   disabled={isSubmitting}
-                  className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>

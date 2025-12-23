@@ -58,8 +58,8 @@ export default function Navigation({ links }: NavigationProps) {
           transformOrigin: 'center',
           transition: 'box-shadow 0.2s ease-out',
           boxShadow: isHovered 
-            ? '0 12px 40px 0 rgba(59, 130, 246, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.2) inset'
-            : '0 8px 32px 0 rgba(59, 130, 246, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.15) inset'
+            ? '0 12px 40px 0 rgba(25, 37, 82, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.2) inset'
+            : '0 8px 32px 0 rgba(25, 37, 82, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.15) inset'
         }}
       >
         <div className="max-w-6xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-2.5 sm:py-3">

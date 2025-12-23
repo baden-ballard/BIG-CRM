@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import GlassCard from '../../../components/GlassCard';
 import GlassButton from '../../../components/GlassButton';
 import { supabase } from '../../../lib/supabase';
@@ -120,6 +120,7 @@ interface ParticipantRelationship {
 export default function ParticipantDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const participantId = (params.id ?? '') as string;
 
   const [participant, setParticipant] = useState<Participant | null>(null);
@@ -181,7 +182,7 @@ export default function ParticipantDetailPage() {
   const [availableGroupPlans, setAvailableGroupPlans] = useState<any[]>([]);
   const [availableMedicarePlans, setAvailableMedicarePlans] = useState<any[]>([]);
   const [planOptionsMap, setPlanOptionsMap] = useState<Map<string, any[]>>(new Map());
-  const [medicarePlanRatesMap, setMedicarePlanRatesMap] = useState<Map<string, any[]>>(new Map());
+  const [medicarePlanRatesMap, setMedicarePlanRatesMap] = useState<Map<string, { rates: any[], activeRate: any | null }>>(new Map());
   const [loadingGroupPlans, setLoadingGroupPlans] = useState(false);
   const [loadingMedicarePlans, setLoadingMedicarePlans] = useState(false);
   const [formData, setFormData] = useState({
@@ -272,6 +273,27 @@ export default function ParticipantDetailPage() {
       setAvailableGroupPlans([]);
     }
   }, [participant]);
+
+  // Handle hash-based scrolling to specific Medicare plan records
+  useEffect(() => {
+    if (activeMedicarePlans.length > 0 || terminatedMedicarePlans.length > 0) {
+      const hash = window.location.hash;
+      if (hash && hash.startsWith('#medicare-plan-')) {
+        const planId = hash.replace('#medicare-plan-', '');
+        setTimeout(() => {
+          const element = document.getElementById(`medicare-plan-${planId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Add a highlight effect
+            element.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+            setTimeout(() => {
+              element.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+            }, 2000);
+          }
+        }, 300);
+      }
+    }
+  }, [activeMedicarePlans, terminatedMedicarePlans]);
 
   const fetchParticipant = async () => {
     try {
@@ -762,27 +784,82 @@ export default function ParticipantDetailPage() {
           }
         }
 
-        // Add active rate to each plan
+        // Add current rate to each plan using priority logic:
+        // 1. Current rate (status "Active")
+        // 2. Next planned rate (status "Planned", earliest start_date)
+        // 3. Last rate (most recent by start_date)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().split('T')[0];
+        
+        const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+          if (!startDate) return 'Ended';
+          
+          const start = new Date(startDate).toISOString().split('T')[0];
+          
+          // If start date is in the future, it's Planned
+          if (start > todayStr) {
+            return 'Planned';
+          }
+          
+          // If end date is null or in the future, it's Active
+          if (!endDate || endDate >= todayStr) {
+            return 'Active';
+          }
+          
+          // Otherwise, it's Ended
+          return 'Ended';
+        };
         
         data.forEach((plan: any) => {
           const rates = ratesByPlanId.get(plan.medicare_plan_id) || [];
-          const activeRate = rates.find((rate: any) => {
-            const startDate = new Date(rate.start_date);
-            startDate.setHours(0, 0, 0, 0);
-            
-            if (!rate.end_date) {
-              // Ongoing rate
-              return today >= startDate;
+          
+          // Categorize rates by status
+          const activeRates: any[] = [];
+          const plannedRates: any[] = [];
+          const endedRates: any[] = [];
+          
+          rates.forEach((rate: any) => {
+            const status = calculateRateStatus(rate.start_date, rate.end_date);
+            if (status === 'Active') {
+              activeRates.push(rate);
+            } else if (status === 'Planned') {
+              plannedRates.push(rate);
+            } else {
+              endedRates.push(rate);
             }
-            
-            const endDate = new Date(rate.end_date);
-            endDate.setHours(0, 0, 0, 0);
-            
-            // Rate is active if today is within the start and end date range
-            return today >= startDate && today <= endDate;
           });
+          
+          let activeRate: any = null;
+          
+          // Priority 1: Most recent active rate
+          if (activeRates.length > 0) {
+            activeRate = activeRates.reduce((latest, current) => {
+              const currentStart = current.start_date ? new Date(current.start_date).getTime() : 0;
+              const latestStart = latest.start_date ? new Date(latest.start_date).getTime() : 0;
+              return currentStart > latestStart ? current : latest;
+            });
+          }
+          // Priority 2: Next planned rate (earliest start_date)
+          else if (plannedRates.length > 0) {
+            activeRate = plannedRates.reduce((earliest, current) => {
+              const currentStart = current.start_date 
+                ? new Date(current.start_date).getTime() 
+                : Infinity;
+              const earliestStart = earliest.start_date 
+                ? new Date(earliest.start_date).getTime() 
+                : Infinity;
+              return currentStart < earliestStart ? current : earliest;
+            });
+          }
+          // Priority 3: Last rate (most recent by start_date)
+          else if (endedRates.length > 0) {
+            activeRate = endedRates.reduce((latest, current) => {
+              const currentStart = current.start_date ? new Date(current.start_date).getTime() : 0;
+              const latestStart = latest.start_date ? new Date(latest.start_date).getTime() : 0;
+              return currentStart > latestStart ? current : latest;
+            });
+          }
           
           plan.active_rate = activeRate || null;
         });
@@ -1339,20 +1416,73 @@ export default function ParticipantDetailPage() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
-      const rates = (ratesData || []).map((rate: any) => {
-        const isActive = !rate.end_date || (() => {
-          const endDate = new Date(rate.end_date);
-          endDate.setHours(0, 0, 0, 0);
-          return endDate >= today;
-        })();
+      const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+        if (!startDate) return 'Ended';
         
+        const todayStr = today.toISOString().split('T')[0];
+        const start = new Date(startDate).toISOString().split('T')[0];
+        
+        // If start date is in the future, it's Planned
+        if (start > todayStr) {
+          return 'Planned';
+        }
+        
+        // If end date is null or in the future, it's Active
+        if (!endDate || endDate >= todayStr) {
+          return 'Active';
+        }
+        
+        // Otherwise, it's Ended
+        return 'Ended';
+      };
+      
+      const rates = (ratesData || []).map((rate: any) => {
+        const status = calculateRateStatus(rate.start_date, rate.end_date);
         return {
           ...rate,
-          isActive,
+          status,
+          isActive: status === 'Active',
         };
       });
 
-      const activeRate = rates.find((r: any) => r.isActive) || null;
+      // Find current rate with priority:
+      // 1. Current rate (status "Active")
+      // 2. Next planned rate (status "Planned", earliest start_date)
+      // 3. Last rate (most recent by start_date)
+      let activeRate: any = null;
+      
+      const activeRates = rates.filter((r: any) => r.status === 'Active');
+      const plannedRates = rates.filter((r: any) => r.status === 'Planned');
+      const endedRates = rates.filter((r: any) => r.status === 'Ended');
+      
+      // Priority 1: Most recent active rate
+      if (activeRates.length > 0) {
+        activeRate = activeRates.reduce((latest: any, current: any) => {
+          const currentStart = current.start_date ? new Date(current.start_date).getTime() : 0;
+          const latestStart = latest.start_date ? new Date(latest.start_date).getTime() : 0;
+          return currentStart > latestStart ? current : latest;
+        });
+      }
+      // Priority 2: Next planned rate (earliest start_date)
+      else if (plannedRates.length > 0) {
+        activeRate = plannedRates.reduce((earliest: any, current: any) => {
+          const currentStart = current.start_date 
+            ? new Date(current.start_date).getTime() 
+            : Infinity;
+          const earliestStart = earliest.start_date 
+            ? new Date(earliest.start_date).getTime() 
+            : Infinity;
+          return currentStart < earliestStart ? current : earliest;
+        });
+      }
+      // Priority 3: Last rate (most recent by start_date)
+      else if (endedRates.length > 0) {
+        activeRate = endedRates.reduce((latest: any, current: any) => {
+          const currentStart = current.start_date ? new Date(current.start_date).getTime() : 0;
+          const latestStart = latest.start_date ? new Date(latest.start_date).getTime() : 0;
+          return currentStart > latestStart ? current : latest;
+        });
+      }
 
       const ratesDataObj = {
         rates,
@@ -2708,7 +2838,7 @@ export default function ParticipantDetailPage() {
                   <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                    className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                   >
                     Cancel
                   </button>
@@ -3168,7 +3298,7 @@ export default function ParticipantDetailPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemovePlan(newPlan.id)}
-                                className="w-full px-4 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                                className="w-full px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                               >
                                 Remove
                               </button>
@@ -3433,7 +3563,7 @@ export default function ParticipantDetailPage() {
                         setShowAddPlanForm(false);
                         setPlanOptionsMap(new Map());
                       }}
-                      className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                      className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                     >
                       Cancel
                     </button>
@@ -3516,7 +3646,7 @@ export default function ParticipantDetailPage() {
                               <button
                                 type="button"
                                 onClick={handleDeleteClick}
-                                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
+                                className="flex items-center justify-center w-8 h-8 rounded-full bg-[#C6282B] hover:bg-[#A01F22] text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
                                 title="Delete plan"
                               >
                                 ×
@@ -3608,7 +3738,7 @@ export default function ParticipantDetailPage() {
                                 {plan.group_plan?.plan_name || 'Unnamed Plan'}
                               </h4>
                               {plan.termination_date && (
-                                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-red-500 text-white">
+                                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-[#C6282B] text-white">
                                   Enrollment Ended: {formatDisplayDate(plan.termination_date)}
                                 </span>
                               )}
@@ -3632,7 +3762,7 @@ export default function ParticipantDetailPage() {
                               <button
                                 type="button"
                                 onClick={handleDeleteClick}
-                                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
+                                className="flex items-center justify-center w-8 h-8 rounded-full bg-[#C6282B] hover:bg-[#A01F22] text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
                                 title="Delete plan"
                               >
                                 ×
@@ -3757,7 +3887,7 @@ export default function ParticipantDetailPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveMedicarePlan(newPlan.id)}
-                                className="w-full px-4 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                                className="w-full px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                               >
                                 Remove
                               </button>
@@ -3838,7 +3968,7 @@ export default function ParticipantDetailPage() {
                         setShowAddMedicarePlanForm(false);
                         setMedicarePlanRatesMap(new Map());
                       }}
-                      className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                      className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                     >
                       Cancel
                     </button>
@@ -3866,13 +3996,29 @@ export default function ParticipantDetailPage() {
               ) : (
                 <div className="space-y-3">
                   {activeMedicarePlans.map((plan) => {
-                    // Use active_rate if available, otherwise fall back to linked rate
-                    const rate = (plan as any).active_rate?.rate || plan.medicare_child_rate?.rate || null;
-
-                    const handlePlanClick = () => {
-                      if (!isEditMode) {
-                        router.push(`/medicare-plans/${plan.medicare_plan_id}`);
+                    // Get rate with priority: rate_override > active_rate from medicarePlanRatesMap > linked medicare_child_rate
+                    let rate: number | null = null;
+                    
+                    // First check for rate_override
+                    if (plan.rate_override !== null) {
+                      rate = plan.rate_override;
+                    } else {
+                      // Try to get from medicarePlanRatesMap (uses priority logic)
+                      const planRatesData = medicarePlanRatesMap.get(plan.medicare_plan_id);
+                      if (planRatesData?.activeRate) {
+                        rate = planRatesData.activeRate.rate;
+                      } else {
+                        // Fall back to linked rate
+                        rate = plan.medicare_child_rate?.rate || null;
                       }
+                    }
+
+                    const handlePlanClick = (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      // Navigate to the participant Medicare plan detail page
+                      router.push(`/participants/${participantId}/medicare-plans/${plan.id}`);
                     };
 
                     const handleDeleteClick = (e: React.MouseEvent) => {
@@ -3883,8 +4029,9 @@ export default function ParticipantDetailPage() {
                     return (
                       <div
                         key={plan.id}
+                        id={`medicare-plan-${plan.id}`}
                         onClick={handlePlanClick}
-                        className={`glass-card rounded-xl p-4 bg-white/5 border border-white/10 transition-colors duration-200 ${isEditMode ? '' : 'cursor-pointer hover:bg-white/10'}`}
+                        className="glass-card rounded-xl p-4 bg-white/5 border border-white/10 transition-colors duration-200 cursor-pointer hover:bg-white/10"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
@@ -3905,7 +4052,7 @@ export default function ParticipantDetailPage() {
                               <button
                                 type="button"
                                 onClick={handleDeleteClick}
-                                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
+                                className="flex items-center justify-center w-8 h-8 rounded-full bg-[#C6282B] hover:bg-[#A01F22] text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
                                 title="Delete plan"
                               >
                                 ×
@@ -3949,10 +4096,12 @@ export default function ParticipantDetailPage() {
                     // Use active_rate if available, otherwise fall back to linked rate
                     const rate = (plan as any).active_rate?.rate || plan.medicare_child_rate?.rate || null;
 
-                    const handlePlanClick = () => {
-                      if (!isEditMode) {
-                        router.push(`/medicare-plans/${plan.medicare_plan_id}`);
-                      }
+                    const handlePlanClick = (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      // Navigate to the participant Medicare plan detail page
+                      router.push(`/participants/${participantId}/medicare-plans/${plan.id}`);
                     };
 
                     const handleDeleteClick = (e: React.MouseEvent) => {
@@ -3963,8 +4112,9 @@ export default function ParticipantDetailPage() {
                     return (
                       <div
                         key={plan.id}
+                        id={`medicare-plan-${plan.id}`}
                         onClick={handlePlanClick}
-                        className={`glass-card rounded-xl p-4 bg-white/5 border border-white/10 opacity-75 transition-colors duration-200 ${isEditMode ? '' : 'cursor-pointer hover:bg-white/10'}`}
+                        className="glass-card rounded-xl p-4 bg-white/5 border border-white/10 opacity-75 transition-colors duration-200 cursor-pointer hover:bg-white/10"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
@@ -3973,7 +4123,7 @@ export default function ParticipantDetailPage() {
                                 {plan.medicare_plan?.plan_name || 'Unnamed Medicare Plan'}
                               </h4>
                               {plan.medicare_plan?.termination_date && (
-                                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-red-500 text-white">
+                                <span className="px-3 py-1 rounded-full text-sm font-semibold bg-[#C6282B] text-white">
                                   Terminated: {formatDisplayDate(plan.medicare_plan.termination_date)}
                                 </span>
                               )}
@@ -3992,7 +4142,7 @@ export default function ParticipantDetailPage() {
                               <button
                                 type="button"
                                 onClick={handleDeleteClick}
-                                className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
+                                className="flex items-center justify-center w-8 h-8 rounded-full bg-[#C6282B] hover:bg-[#A01F22] text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
                                 title="Delete plan"
                               >
                                 ×
@@ -4129,7 +4279,7 @@ export default function ParticipantDetailPage() {
                           <button
                             type="button"
                             onClick={() => handleRemoveDependent(newDependent.id)}
-                            className="w-full px-4 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                            className="w-full px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                           >
                             Remove
                           </button>
@@ -4147,7 +4297,7 @@ export default function ParticipantDetailPage() {
                       setNewDependents([]);
                       setShowAddDependentForm(false);
                     }}
-                    className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                    className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                   >
                     Cancel
                   </button>
@@ -4496,7 +4646,7 @@ export default function ParticipantDetailPage() {
                           <button
                             type="button"
                             onClick={() => handleRemoveRelationship(newRelationship.id)}
-                            className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                            className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                           >
                             Remove
                           </button>
@@ -4513,7 +4663,7 @@ export default function ParticipantDetailPage() {
                         setNewRelationships([]);
                         setShowAddRelationshipForm(false);
                       }}
-                      className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                      className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                     >
                       Cancel
                     </button>
@@ -4573,7 +4723,7 @@ export default function ParticipantDetailPage() {
                             <button
                               type="button"
                               onClick={() => handleDeleteRelationship(relationship.id)}
-                              className="px-4 py-2 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 text-sm"
+                              className="px-4 py-2 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 text-sm"
                             >
                               Delete
                             </button>
@@ -4674,7 +4824,7 @@ export default function ParticipantDetailPage() {
                       type="button"
                       onClick={handleCancelAddNote}
                       disabled={isSubmitting}
-                      className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Cancel
                     </button>
@@ -4737,7 +4887,7 @@ export default function ParticipantDetailPage() {
                 type="button"
                 onClick={() => setPlanToDelete(null)}
                 disabled={isDeletingPlan}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -4745,7 +4895,7 @@ export default function ParticipantDetailPage() {
                 type="button"
                 onClick={handleDeletePlan}
                 disabled={isDeletingPlan}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeletingPlan ? 'Deleting...' : 'Delete'}
               </button>

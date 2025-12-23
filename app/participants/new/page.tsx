@@ -138,10 +138,26 @@ export default function NewParticipantPage() {
         return;
       }
 
-      if (!formData.hire_date || formData.hire_date.trim() === '') {
+      // Hire Date is only required when coming from a group page
+      if (groupId && (!formData.hire_date || formData.hire_date.trim() === '')) {
         alert('Please enter a hire date. Hire Date is required.');
         setIsSubmitting(false);
         return;
+      }
+
+      // Validate phone number and email address when not coming from a group page
+      if (!groupId) {
+        if (!formData.phone_number || formData.phone_number.trim() === '') {
+          alert('Please enter a phone number. Phone Number is required.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (!formData.email_address || formData.email_address.trim() === '') {
+          alert('Please enter an email address. Email Address is required.');
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       // Validate class selection if group has multiple classes
@@ -165,6 +181,7 @@ export default function NewParticipantPage() {
       if (formData.address) {
         insertData.address = formData.address;
       }
+      // Phone number and email are required when not coming from a group, optional otherwise
       if (formData.phone_number) {
         insertData.phone_number = formData.phone_number;
       }
@@ -312,7 +329,7 @@ export default function NewParticipantPage() {
               {/* Phone Number */}
               <div>
                 <label htmlFor="phone_number" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                  Phone Number
+                  Phone Number {!groupId && '*'}
                 </label>
                 <input
                   type="tel"
@@ -320,6 +337,7 @@ export default function NewParticipantPage() {
                   name="phone_number"
                   value={formData.phone_number}
                   onChange={handleChange}
+                  required={!groupId}
                   className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                   placeholder="Enter phone number"
                 />
@@ -328,7 +346,7 @@ export default function NewParticipantPage() {
               {/* Email Address */}
               <div>
                 <label htmlFor="email_address" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                  Email Address
+                  Email Address {!groupId && '*'}
                 </label>
                 <input
                   type="email"
@@ -336,6 +354,7 @@ export default function NewParticipantPage() {
                   name="email_address"
                   value={formData.email_address}
                   onChange={handleChange}
+                  required={!groupId}
                   className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                   placeholder="Enter email address"
                 />
@@ -359,7 +378,8 @@ export default function NewParticipantPage() {
             </div>
           </div>
 
-          {/* Group Information Section */}
+          {/* Group Information Section - Only show when coming from a group page */}
+          {groupId && (
           <div className="pt-6 border-t border-white/20">
             <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4 border-b border-black pb-4">
               Group Information
@@ -509,8 +529,10 @@ export default function NewParticipantPage() {
               </div>
             </div>
           </div>
+          )}
 
-          {/* Dependents Section */}
+          {/* Dependents Section - Only show when coming from a group page */}
+          {groupId && (
           <div className="pt-6 border-t border-white/20">
             <div className="flex items-center justify-between mb-6 border-b border-black pb-4">
               <h2 className="text-2xl font-bold text-[var(--glass-black-dark)]">
@@ -661,7 +683,7 @@ export default function NewParticipantPage() {
                       <button
                         type="button"
                         onClick={() => handleRemoveDependent(index)}
-                        className="px-3 py-1 rounded-full text-sm font-semibold text-red-500 hover:bg-red-500/20 transition-all"
+                        className="px-3 py-1 rounded-full text-sm font-semibold text-[#C6282B] hover:bg-[#C6282B]/20 transition-all"
                       >
                         Remove
                       </button>
@@ -671,6 +693,7 @@ export default function NewParticipantPage() {
               </div>
             )}
           </div>
+          )}
 
           {/* Form Actions */}
           <div className="flex items-center justify-end gap-4 pt-4 border-t border-white/20">
@@ -683,7 +706,7 @@ export default function NewParticipantPage() {
                   router.back();
                 }
               }}
-              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+              className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
             >
               Cancel
             </button>
@@ -701,4 +724,5 @@ export default function NewParticipantPage() {
     </div>
   );
 }
+
 

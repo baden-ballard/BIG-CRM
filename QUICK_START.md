@@ -53,8 +53,8 @@ BIG CRM/
 ## 🎨 Design Theme
 
 - **Primary Color**: White (#ffffff)
-- **Secondary Color**: Blue (#3b82f6)
-- **Accent Color**: Red (#ef4444)
+- **Secondary Color**: Blue (#192552)
+- **Accent Color**: Red (#C6282B)
 - **Style**: Glassmorphic with backdrop blur effects
 
 ## 📱 Pages Available

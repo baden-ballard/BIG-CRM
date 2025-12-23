@@ -1044,7 +1044,7 @@ export default function GroupDetailPage() {
             <button
               type="button"
               onClick={handleDeleteClick}
-              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
+              className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
             >
               Delete
             </button>
@@ -1189,7 +1189,7 @@ export default function GroupDetailPage() {
                   <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                    className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                   >
                     Cancel
                   </button>
@@ -1749,7 +1749,7 @@ export default function GroupDetailPage() {
                           type="button"
                           onClick={handleCancelAddRenewal}
                           disabled={isSubmitting}
-                          className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Cancel
                         </button>
@@ -2093,7 +2093,7 @@ export default function GroupDetailPage() {
                     type="button"
                     onClick={handleCancelAddNote}
                     disabled={isSubmitting}
-                    className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
@@ -2154,7 +2154,7 @@ export default function GroupDetailPage() {
                 type="button"
                 onClick={() => setShowDeleteDialog(false)}
                 disabled={isDeleting}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -2162,7 +2162,7 @@ export default function GroupDetailPage() {
                 type="button"
                 onClick={handleDeleteGroup}
                 disabled={isDeleting}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </button>

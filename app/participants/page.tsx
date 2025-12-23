@@ -185,18 +185,26 @@ export default function ParticipantsPage() {
     );
   }, [filteredParticipants, showOnlyMedicare, participantsWithMedicare]);
 
-  // Apply Active filter to medicare-filtered participants
+  // Apply Active filter to medicare-filtered participants and sort alphabetically
   const activeFilteredParticipants = useMemo(() => {
-    if (!showOnlyActive) {
-      return medicareFilteredParticipants;
+    let filtered = medicareFilteredParticipants;
+    
+    if (showOnlyActive) {
+      filtered = medicareFilteredParticipants.filter(participant => {
+        // If participant is part of a group, check employment_status
+        if (participant.group_id) {
+          return participant.employment_status === 'Active';
+        }
+        // If participant only has Medicare plan, check if they have an active Medicare plan
+        return participantsWithActiveMedicare.has(participant.id);
+      });
     }
-    return medicareFilteredParticipants.filter(participant => {
-      // If participant is part of a group, check employment_status
-      if (participant.group_id) {
-        return participant.employment_status === 'Active';
-      }
-      // If participant only has Medicare plan, check if they have an active Medicare plan
-      return participantsWithActiveMedicare.has(participant.id);
+    
+    // Sort alphabetically by client_name
+    return [...filtered].sort((a, b) => {
+      const nameA = (a.client_name || '').toLowerCase();
+      const nameB = (b.client_name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
     });
   }, [medicareFilteredParticipants, showOnlyActive, participantsWithActiveMedicare]);
 
@@ -321,9 +329,9 @@ export default function ParticipantsPage() {
             </GlassCard>
           )}
 
-          {medicareFilteredParticipants.length > 0 && (
+          {activeFilteredParticipants.length > 0 && (
           <div className="grid gap-6 grid-cols-1">
-            {medicareFilteredParticipants.map((participant) => (
+            {activeFilteredParticipants.map((participant) => (
             <GlassCard 
               key={participant.id} 
               className="hover:scale-105 transition-transform cursor-pointer"
@@ -377,4 +385,5 @@ export default function ParticipantsPage() {
     </div>
   );
 }
+
 

@@ -277,6 +277,25 @@ export default function ViewMedicarePlanPage() {
     }).format(value);
   };
 
+  // Helper function to calculate rate status based on dates
+  const calculateRateStatus = (startDate: string, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+    const today = new Date().toISOString().split('T')[0];
+    const start = new Date(startDate).toISOString().split('T')[0];
+    
+    // If start date is in the future, it's Planned
+    if (start > today) {
+      return 'Planned';
+    }
+    
+    // If end date is null or in the future, it's Active
+    if (!endDate || endDate >= today) {
+      return 'Active';
+    }
+    
+    // Otherwise it's Ended
+    return 'Ended';
+  };
+
   const isPlanActive = () => {
     // Plan is always considered active (no termination date field)
     return true;
@@ -591,7 +610,7 @@ export default function ViewMedicarePlanPage() {
                   <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+                    className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
                   >
                     Cancel
                   </button>
@@ -720,7 +739,7 @@ export default function ViewMedicarePlanPage() {
                       type="button"
                       onClick={handleRateCancel}
                       disabled={isSubmitting}
-                      className="px-4 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
+                      className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
                     >
                       Cancel
                     </button>
@@ -737,73 +756,143 @@ export default function ViewMedicarePlanPage() {
               <p className="text-[var(--glass-gray-medium)] text-center py-4">
                 No rates configured for this plan
               </p>
-            ) : (
-              <div className="space-y-4">
-                {childRates.map((rate) => {
-                  const isActive = !rate.end_date;
-                  return (
-                    <div
-                      key={rate.id}
-                      className={`glass-card rounded-xl p-4 border ${
-                        isActive
-                          ? 'bg-green-500/10 border-green-500/20'
-                          : 'bg-white/5 border-white/10'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <span className="font-semibold text-[var(--glass-black-dark)] text-lg">
-                            {formatCurrency(rate.rate)}
-                          </span>
-                          <span className="text-sm text-[var(--glass-gray-medium)]">
-                            {formatDate(rate.start_date)} - {rate.end_date ? formatDate(rate.end_date) : 'Ongoing'}
-                          </span>
-                          {isActive && (
-                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-700">
-                              Current
-                            </span>
-                          )}
-                        </div>
-                        {isEditMode && (
-                          <div className="flex items-center gap-2">
-                            {isActive && (
-                              <button
-                                type="button"
-                                onClick={() => handleRateEdit(rate)}
-                                className="px-4 py-2 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
-                              >
-                                Edit Rate
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setRateToDelete(rate)}
-                              className="text-red-500 hover:text-red-600 transition-colors duration-200 flex-shrink-0"
-                              title="Delete rate"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-5 w-5"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M6 18L18 6M6 6l12 12"
-                                />
-                              </svg>
-                            </button>
-                          </div>
+            ) : (() => {
+              // Group rates by status
+              const plannedRates = childRates.filter(rate => {
+                const status = calculateRateStatus(rate.start_date, rate.end_date);
+                return status === 'Planned';
+              });
+              
+              const activeRates = childRates.filter(rate => {
+                const status = calculateRateStatus(rate.start_date, rate.end_date);
+                return status === 'Active';
+              });
+              
+              const endedRates = childRates.filter(rate => {
+                const status = calculateRateStatus(rate.start_date, rate.end_date);
+                return status === 'Ended';
+              });
+              
+              // Sort each group by start_date descending (newest first)
+              const sortedPlannedRates = [...plannedRates].sort((a, b) => 
+                new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+              );
+              
+              const sortedActiveRates = [...activeRates].sort((a, b) => 
+                new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+              );
+              
+              const sortedEndedRates = [...endedRates].sort((a, b) => 
+                new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+              );
+              
+              const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
+                Planned: 'bg-blue-500/10 border-blue-500/20',
+                Active: 'bg-green-500/10 border-green-500/20',
+                Ended: 'bg-gray-500/10 border-gray-500/20'
+              };
+              
+              const statusBadgeColors: Record<'Planned' | 'Active' | 'Ended', string> = {
+                Planned: 'bg-blue-500/20 text-blue-700',
+                Active: 'bg-green-500/20 text-green-700',
+                Ended: 'bg-gray-500/20 text-gray-700'
+              };
+              
+              const renderRateCard = (rate: MedicareChildRate, status: 'Planned' | 'Active' | 'Ended') => (
+                <div
+                  key={rate.id}
+                  className={`glass-card rounded-xl p-4 border ${statusColors[status]}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className="font-semibold text-[var(--glass-black-dark)] text-lg">
+                        {formatCurrency(rate.rate)}
+                      </span>
+                      <span className="text-sm text-[var(--glass-gray-medium)]">
+                        {formatDate(rate.start_date)} - {rate.end_date ? formatDate(rate.end_date) : 'Ongoing'}
+                      </span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusBadgeColors[status]}`}>
+                        {status}
+                      </span>
+                    </div>
+                    {isEditMode && (
+                      <div className="flex items-center gap-2">
+                        {status === 'Active' && (
+                          <button
+                            type="button"
+                            onClick={() => handleRateEdit(rate)}
+                            className="px-4 py-2 rounded-full font-semibold bg-[var(--glass-secondary)] text-white hover:bg-[var(--glass-secondary-dark)] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
+                          >
+                            Edit Rate
+                          </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => setRateToDelete(rate)}
+                          className="text-red-500 hover:text-red-600 transition-colors duration-200 flex-shrink-0"
+                          title="Delete rate"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+              
+              return (
+                <div className="space-y-4">
+                  {/* Planned Rates Section */}
+                  {sortedPlannedRates.length > 0 && (
+                    <div>
+                      <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                        Planned
+                      </h5>
+                      <div className="space-y-3">
+                        {sortedPlannedRates.map(rate => renderRateCard(rate, 'Planned'))}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  )}
+                  
+                  {/* Active Rates Section */}
+                  {sortedActiveRates.length > 0 && (
+                    <div>
+                      <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                        Active
+                      </h5>
+                      <div className="space-y-3">
+                        {sortedActiveRates.map(rate => renderRateCard(rate, 'Active'))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Ended Rates Section */}
+                  {sortedEndedRates.length > 0 && (
+                    <div>
+                      <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
+                        Ended
+                      </h5>
+                      <div className="space-y-3">
+                        {sortedEndedRates.map(rate => renderRateCard(rate, 'Ended'))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </form>
 
@@ -884,7 +973,7 @@ export default function ViewMedicarePlanPage() {
                 type="button"
                 onClick={() => setRateToDelete(null)}
                 disabled={isDeletingRate}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
@@ -892,7 +981,7 @@ export default function ViewMedicarePlanPage() {
                 type="button"
                 onClick={handleDeleteRate}
                 disabled={isDeletingRate}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeletingRate ? 'Deleting...' : 'Delete'}
               </button>

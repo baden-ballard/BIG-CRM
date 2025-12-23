@@ -387,7 +387,7 @@ export default function ParticipantGroupPlanRatesPage() {
                     <td className="py-4 px-4">
                       <button
                         onClick={() => setRateToDelete(rate)}
-                        className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors duration-200"
+                        className="px-3 py-1.5 rounded-lg bg-[#C6282B] hover:bg-[#A01F22] text-white text-xs font-semibold transition-colors duration-200"
                       >
                         Delete
                       </button>
@@ -435,14 +435,14 @@ export default function ParticipantGroupPlanRatesPage() {
               <button
                 onClick={() => setRateToDelete(null)}
                 disabled={isDeleting}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
@@ -453,4 +453,5 @@ export default function ParticipantGroupPlanRatesPage() {
     </div>
   );
 }
+
 

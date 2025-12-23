@@ -519,7 +519,7 @@ export default function NewGroupPage() {
             <button
               type="button"
               onClick={() => router.back()}
-              className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+              className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
             >
               Cancel
             </button>
@@ -537,4 +537,5 @@ export default function NewGroupPage() {
     </div>
   );
 }
+
 

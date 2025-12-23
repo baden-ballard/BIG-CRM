@@ -608,7 +608,7 @@ export default function NewPlanPage() {
           <button
             type="button"
             onClick={() => router.push(`/groups/${groupId}`)}
-            className="px-6 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300"
+            className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300"
           >
             Cancel
           </button>
@@ -934,7 +934,7 @@ export default function NewPlanPage() {
                         <button
                           type="button"
                           onClick={() => handleRemoveOption(newOption.id)}
-                          className="px-4 py-3 rounded-full font-semibold bg-red-500 text-white hover:bg-red-600 shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end"
+                          className="px-4 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap self-end"
                         >
                           Remove
                         </button>
@@ -1100,7 +1100,7 @@ export default function NewPlanPage() {
                   setCsvRateEndDate('');
                 }}
                 disabled={isUploadingRates}
-                className="px-6 py-3 rounded-full font-semibold bg-gray-500 text-white hover:bg-gray-600 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
