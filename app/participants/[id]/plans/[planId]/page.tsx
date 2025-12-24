@@ -371,7 +371,7 @@ export default function ParticipantPlanDetailPage() {
               if (groupPlanData) {
                 if (groupPlanData.plan_type === 'Age Banded') {
                   // For Age Banded plans, use the appropriate contribution value based on dependent type
-                  const dependent = plan.dependent;
+                  const dependent = Array.isArray(plan.dependent) ? plan.dependent[0] : plan.dependent;
                   if (!dependent) {
                     // Employee
                     contributionAmount = groupPlanData.employer_contribution_value || null;
