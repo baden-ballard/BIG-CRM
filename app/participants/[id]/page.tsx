@@ -794,20 +794,20 @@ export default function ParticipantDetailPage() {
 
         // Add current rate to each plan using priority logic:
         // 1. Current rate (status "Active")
-        // 2. Next planned rate (status "Planned", earliest start_date)
+        // 2. Next pending rate (status "Pending", earliest start_date)
         // 3. Last rate (most recent by start_date)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const todayStr = today.toISOString().split('T')[0];
         
-        const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+        const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Pending' | 'Active' | 'Ended' => {
           if (!startDate) return 'Ended';
           
           const start = new Date(startDate).toISOString().split('T')[0];
           
-          // If start date is in the future, it's Planned
+          // If start date is in the future, it's Pending
           if (start > todayStr) {
-            return 'Planned';
+            return 'Pending';
           }
           
           // If end date is null or in the future, it's Active
@@ -824,15 +824,15 @@ export default function ParticipantDetailPage() {
           
           // Categorize rates by status
           const activeRates: any[] = [];
-          const plannedRates: any[] = [];
+          const pendingRates: any[] = [];
           const endedRates: any[] = [];
           
           rates.forEach((rate: any) => {
             const status = calculateRateStatus(rate.start_date, rate.end_date);
             if (status === 'Active') {
               activeRates.push(rate);
-            } else if (status === 'Planned') {
-              plannedRates.push(rate);
+            } else if (status === 'Pending') {
+              pendingRates.push(rate);
             } else {
               endedRates.push(rate);
             }
@@ -848,9 +848,9 @@ export default function ParticipantDetailPage() {
               return currentStart > latestStart ? current : latest;
             });
           }
-          // Priority 2: Next planned rate (earliest start_date)
-          else if (plannedRates.length > 0) {
-            activeRate = plannedRates.reduce((earliest, current) => {
+          // Priority 2: Next pending rate (earliest start_date)
+          else if (pendingRates.length > 0) {
+            activeRate = pendingRates.reduce((earliest, current) => {
               const currentStart = current.start_date 
                 ? new Date(current.start_date).getTime() 
                 : Infinity;
@@ -1417,15 +1417,15 @@ export default function ParticipantDetailPage() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
-      const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+      const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Pending' | 'Active' | 'Ended' => {
         if (!startDate) return 'Ended';
         
         const todayStr = today.toISOString().split('T')[0];
         const start = new Date(startDate).toISOString().split('T')[0];
         
-        // If start date is in the future, it's Planned
+        // If start date is in the future, it's Pending
         if (start > todayStr) {
-          return 'Planned';
+          return 'Pending';
         }
         
         // If end date is null or in the future, it's Active
@@ -1448,12 +1448,12 @@ export default function ParticipantDetailPage() {
 
       // Find current rate with priority:
       // 1. Current rate (status "Active")
-      // 2. Next planned rate (status "Planned", earliest start_date)
+      // 2. Next pending rate (status "Pending", earliest start_date)
       // 3. Last rate (most recent by start_date)
       let activeRate: any = null;
       
       const activeRates = rates.filter((r: any) => r.status === 'Active');
-      const plannedRates = rates.filter((r: any) => r.status === 'Planned');
+      const pendingRates = rates.filter((r: any) => r.status === 'Pending');
       const endedRates = rates.filter((r: any) => r.status === 'Ended');
       
       // Priority 1: Most recent active rate
@@ -1464,9 +1464,9 @@ export default function ParticipantDetailPage() {
           return currentStart > latestStart ? current : latest;
         });
       }
-      // Priority 2: Next planned rate (earliest start_date)
-      else if (plannedRates.length > 0) {
-        activeRate = plannedRates.reduce((earliest: any, current: any) => {
+      // Priority 2: Next pending rate (earliest start_date)
+      else if (pendingRates.length > 0) {
+        activeRate = pendingRates.reduce((earliest: any, current: any) => {
           const currentStart = current.start_date 
             ? new Date(current.start_date).getTime() 
             : Infinity;
@@ -2518,15 +2518,58 @@ export default function ParticipantDetailPage() {
           if (insertError) {
             console.error('Error creating plan records for dependents:', insertError);
           } else if (insertedPlans) {
+            // Fetch group plan data to get contribution values
+            const groupPlanIds = [...new Set(planRecordsToCreate.map(r => r.group_plan_id))];
+            const groupPlansMap = new Map();
+            
+            for (const groupPlanId of groupPlanIds) {
+              const { data: groupPlanData } = await supabase
+                .from('group_plans')
+                .select('id, employer_contribution_type, employer_contribution_value, employer_spouse_contribution_value, employer_child_contribution_value')
+                .eq('id', groupPlanId)
+                .single();
+              
+              if (groupPlanData) {
+                groupPlansMap.set(groupPlanId, groupPlanData);
+              }
+            }
+
             // Create junction table records for Age Banded plans
             for (let i = 0; i < insertedPlans.length; i++) {
               const insertedPlan = insertedPlans[i];
               const record = planRecordsToCreate[i];
+              const groupPlan = groupPlansMap.get(record.group_plan_id);
 
-              if (record.group_option_rate_id) {
+              if (record.group_option_rate_id && groupPlan) {
+                // Determine which contribution applies based on dependent relationship
+                let contributionAmount: number | null = null;
+                const dependent = dependents.find(d => d.id === record.dependent_id);
+                
+                if (!record.dependent_id) {
+                  // Employee
+                  contributionAmount = groupPlan.employer_contribution_value || null;
+                } else if (dependent) {
+                  if (dependent.relationship === 'Spouse') {
+                    contributionAmount = groupPlan.employer_spouse_contribution_value || null;
+                  } else if (dependent.relationship === 'Child') {
+                    contributionAmount = groupPlan.employer_child_contribution_value || null;
+                  }
+                }
+
+                // Get the rate to calculate start_date
+                const { data: rateData } = await supabase
+                  .from('group_option_rates')
+                  .select('start_date')
+                  .eq('id', record.group_option_rate_id)
+                  .single();
+
                 junctionRecordsToCreate.push({
                   participant_group_plan_id: insertedPlan.id,
                   group_option_rate_id: record.group_option_rate_id,
+                  employer_contribution_type: groupPlan.employer_contribution_type || null,
+                  employer_contribution_amount: contributionAmount,
+                  start_date: rateData?.start_date || record.effective_date || null,
+                  end_date: null,
                 });
               }
             }
@@ -2829,7 +2872,7 @@ export default function ParticipantDetailPage() {
                 onClick={() => toggleSection('participant-information')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['participant-information'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['participant-information'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Participant Information</span>
@@ -2993,7 +3036,7 @@ export default function ParticipantDetailPage() {
                   onClick={() => toggleSection('group-information')}
                   className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
                 >
-                  <span className={`transform transition-transform ${collapsedSections['group-information'] ? 'rotate-180' : ''}`}>
+                  <span className={`text-lg transform transition-transform ${collapsedSections['group-information'] ? 'rotate-180' : ''}`}>
                     ▼
                   </span>
                   <span>Group Information</span>
@@ -3202,7 +3245,7 @@ export default function ParticipantDetailPage() {
                   onClick={() => toggleSection('group-plan-details')}
                   className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
                 >
-                  <span className={`transform transition-transform ${collapsedSections['group-plan-details'] ? 'rotate-180' : ''}`}>
+                  <span className={`text-lg transform transition-transform ${collapsedSections['group-plan-details'] ? 'rotate-180' : ''}`}>
                     ▼
                   </span>
                   <span>Group Plan Details</span>
@@ -3816,7 +3859,7 @@ export default function ParticipantDetailPage() {
                 onClick={() => toggleSection('medicare-plans')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['medicare-plans'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['medicare-plans'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Medicare Plans</span>
@@ -4183,7 +4226,7 @@ export default function ParticipantDetailPage() {
                   onClick={() => toggleSection('dependents')}
                   className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
                 >
-                  <span className={`transform transition-transform ${collapsedSections['dependents'] ? 'rotate-180' : ''}`}>
+                  <span className={`text-lg transform transition-transform ${collapsedSections['dependents'] ? 'rotate-180' : ''}`}>
                     ▼
                   </span>
                   <span>Dependents</span>
@@ -4316,7 +4359,18 @@ export default function ParticipantDetailPage() {
               </p>
             ) : (
               <div className="space-y-3">
-                {dependents.map((dependent) => (
+                {[...dependents].sort((a, b) => {
+                  // Sort by DOB: oldest first
+                  // Dependents without DOB go to the end
+                  if (!a.dob && !b.dob) return 0;
+                  if (!a.dob) return 1; // a goes after b
+                  if (!b.dob) return -1; // b goes after a
+                  
+                  // Compare dates (older dates come first)
+                  const dateA = new Date(a.dob);
+                  const dateB = new Date(b.dob);
+                  return dateA.getTime() - dateB.getTime();
+                }).map((dependent) => (
                   <div
                     key={dependent.id}
                     className="glass-card rounded-xl p-4 bg-white/5 border border-white/10"
@@ -4441,7 +4495,7 @@ export default function ParticipantDetailPage() {
                   onClick={() => toggleSection('persons-of-interest')}
                   className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
                 >
-                  <span className={`transform transition-transform ${collapsedSections['persons-of-interest'] ? 'rotate-180' : ''}`}>
+                  <span className={`text-lg transform transition-transform ${collapsedSections['persons-of-interest'] ? 'rotate-180' : ''}`}>
                     ▼
                   </span>
                   <span>Persons of Interest</span>
@@ -4748,7 +4802,7 @@ export default function ParticipantDetailPage() {
                 onClick={() => toggleSection('notes')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['notes'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['notes'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Notes</span>
@@ -4849,7 +4903,12 @@ export default function ParticipantDetailPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <span className="text-sm font-semibold text-[var(--glass-gray-medium)]">
-                            {new Date(note.date).toLocaleDateString()}
+                            {(() => {
+                              const dateOnlyMatch = String(note.date).match(/^(\d{4})-(\d{2})-(\d{2})/);
+                              return dateOnlyMatch 
+                                ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                                : new Date(note.date).toLocaleDateString();
+                            })()}
                           </span>
                         </div>
                         <p className="text-sm text-[var(--glass-black-dark)] whitespace-pre-wrap">

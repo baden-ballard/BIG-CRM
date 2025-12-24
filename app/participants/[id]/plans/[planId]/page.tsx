@@ -73,6 +73,10 @@ interface RateHistoryRecord {
   dependent_id: string | null;
   dependent_name: string | null;
   dependent_relationship: string | null;
+  employer_contribution_type: string | null;
+  employer_contribution_amount: number | null;
+  start_date: string | null;
+  end_date: string | null;
   group_option_rate: {
     id: string;
     rate: number;
@@ -305,6 +309,10 @@ export default function ParticipantPlanDetailPage() {
           id,
           created_at,
           participant_group_plan_id,
+          employer_contribution_type,
+          employer_contribution_amount,
+          start_date,
+          end_date,
           group_option_rate:group_option_rates (
             id,
             rate,
@@ -325,6 +333,14 @@ export default function ParticipantPlanDetailPage() {
       if ((!junctionData || junctionData.length === 0) && currentPlan?.group_plan) {
         const planEffectiveDate = currentPlan.group_plan.effective_date ? new Date(currentPlan.group_plan.effective_date) : null;
         const planTerminationDate = currentPlan.group_plan.termination_date ? new Date(currentPlan.group_plan.termination_date) : null;
+
+        // Fetch group plan data to get contribution values
+        const groupPlanId = currentPlan.group_plan.id;
+        const { data: groupPlanData } = await supabase
+          .from('group_plans')
+          .select('employer_contribution_type, employer_contribution_value, employer_spouse_contribution_value, employer_child_contribution_value, plan_type')
+          .eq('id', groupPlanId)
+          .single();
 
         // For each participant plan, try to find matching rates
         const junctionRecordsToCreate: any[] = [];
@@ -349,9 +365,34 @@ export default function ParticipantPlanDetailPage() {
 
             const effectiveRates = allRates.filter(isRateEffectiveInPlanWindow);
             effectiveRates.forEach((rate: any) => {
+              // Determine which contribution applies based on dependent relationship
+              let contributionAmount: number | null = null;
+              
+              if (groupPlanData) {
+                if (groupPlanData.plan_type === 'Age Banded') {
+                  // For Age Banded plans, use the appropriate contribution value based on dependent type
+                  const dependent = plan.dependent;
+                  if (!dependent) {
+                    // Employee
+                    contributionAmount = groupPlanData.employer_contribution_value || null;
+                  } else if (dependent.relationship === 'Spouse') {
+                    contributionAmount = groupPlanData.employer_spouse_contribution_value || null;
+                  } else if (dependent.relationship === 'Child') {
+                    contributionAmount = groupPlanData.employer_child_contribution_value || null;
+                  }
+                } else {
+                  // For non-Age Banded plans, use the standard contribution value
+                  contributionAmount = groupPlanData.employer_contribution_value || null;
+                }
+              }
+
               junctionRecordsToCreate.push({
                 participant_group_plan_id: plan.id,
                 group_option_rate_id: rate.id,
+                employer_contribution_type: groupPlanData?.employer_contribution_type || null,
+                employer_contribution_amount: contributionAmount,
+                start_date: rate.start_date || null,
+                end_date: rate.end_date || null,
               });
             });
           }
@@ -370,6 +411,10 @@ export default function ParticipantPlanDetailPage() {
                 id,
                 created_at,
                 participant_group_plan_id,
+                employer_contribution_type,
+                employer_contribution_amount,
+                start_date,
+                end_date,
                 group_option_rate:group_option_rates (
                   id,
                   rate,
@@ -400,6 +445,10 @@ export default function ParticipantPlanDetailPage() {
                   dependent_id: planInfo?.dependent_id || null,
                   dependent_name: planInfo?.dependent_name || null,
                   dependent_relationship: planInfo?.dependent_relationship || null,
+                  employer_contribution_type: record.employer_contribution_type || null,
+                  employer_contribution_amount: record.employer_contribution_amount || null,
+                  start_date: record.start_date || null,
+                  end_date: record.end_date || null,
                   rate_override: planInfo?.rate_override || null,
                   group_option_rate: record.group_option_rate,
                 };
@@ -461,6 +510,10 @@ export default function ParticipantPlanDetailPage() {
           dependent_id: planInfo?.dependent_id || null,
           dependent_name: planInfo?.dependent_name || null,
           dependent_relationship: planInfo?.dependent_relationship || null,
+          employer_contribution_type: record.employer_contribution_type || null,
+          employer_contribution_amount: record.employer_contribution_amount || null,
+          start_date: record.start_date || null,
+          end_date: record.end_date || null,
           rate_override: planInfo?.rate_override || null,
           group_option_rate: record.group_option_rate,
           plan_option_id: planOptionId,
@@ -737,6 +790,15 @@ export default function ParticipantPlanDetailPage() {
 
   const formatDisplayDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      // Create date using local time (month is 0-indexed in Date constructor)
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString();
+    }
+    // For datetime strings, use the original behavior
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -879,15 +941,15 @@ export default function ParticipantPlanDetailPage() {
   }
 
   // Helper function to calculate rate status based on dates
-  const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+  const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Pending' | 'Active' | 'Ended' => {
     if (!startDate) return 'Ended';
     
     const today = new Date().toISOString().split('T')[0];
     const start = new Date(startDate).toISOString().split('T')[0];
     
-    // If start date is in the future, it's Planned
+    // If start date is in the future, it's Pending
     if (start > today) {
-      return 'Planned';
+      return 'Pending';
     }
     
     // If end date is null or in the future, it's Active
@@ -901,7 +963,7 @@ export default function ParticipantPlanDetailPage() {
 
   // Find the current rate record from rateHistory with priority:
   // 1. Current rate (status "Active")
-  // 2. Next planned rate (status "Planned", earliest start_date)
+  // 2. Next pending rate (status "Pending", earliest start_date)
   // 3. Last rate (most recent by created_at or start_date)
   const getActiveRateRecord = (): RateHistoryRecord | null => {
     if (!currentPlan || rateHistory.length === 0) return null;
@@ -918,7 +980,7 @@ export default function ParticipantPlanDetailPage() {
 
     // Categorize rates by status
     const activeRates: RateHistoryRecord[] = [];
-    const plannedRates: RateHistoryRecord[] = [];
+    const pendingRates: RateHistoryRecord[] = [];
     const endedRates: RateHistoryRecord[] = [];
 
     planRateRecords.forEach(record => {
@@ -929,8 +991,8 @@ export default function ParticipantPlanDetailPage() {
 
       if (status === 'Active') {
         activeRates.push(record);
-      } else if (status === 'Planned') {
-        plannedRates.push(record);
+      } else if (status === 'Pending') {
+        pendingRates.push(record);
       } else {
         endedRates.push(record);
       }
@@ -943,9 +1005,9 @@ export default function ParticipantPlanDetailPage() {
       });
     }
 
-    // Priority 2: Return the next planned rate (earliest start_date)
-    if (plannedRates.length > 0) {
-      return plannedRates.reduce((earliest, current) => {
+    // Priority 2: Return the next pending rate (earliest start_date)
+    if (pendingRates.length > 0) {
+      return pendingRates.reduce((earliest, current) => {
         const currentStart = current.group_option_rate?.start_date 
           ? new Date(current.group_option_rate.start_date).getTime() 
           : Infinity;
@@ -989,6 +1051,19 @@ export default function ParticipantPlanDetailPage() {
     : (currentPlan.rate_override !== null 
         ? currentPlan.rate_override 
         : currentPlan.group_option_rate?.rate || null);
+  
+  // Check if the current rate is actually active (not pending or ended)
+  const isCurrentRateActive = activeRateRecord
+    ? calculateRateStatus(
+        activeRateRecord.start_date || activeRateRecord.group_option_rate?.start_date || null,
+        activeRateRecord.end_date || activeRateRecord.group_option_rate?.end_date || null
+      ) === 'Active'
+    : (currentPlan.group_option_rate
+        ? calculateRateStatus(
+            currentPlan.group_option_rate.start_date || null,
+            currentPlan.group_option_rate.end_date || null
+          ) === 'Active'
+        : false);
 
   // Check if the current rate is a custom override
   const isCustomRateOverride = activeRateRecord
@@ -1060,10 +1135,16 @@ export default function ParticipantPlanDetailPage() {
   const childPlans = allPlans.filter(p => p.dependent?.relationship === 'Child');
 
   // Calculate total Employee Responsible Amount for Age Banded plans
-  // Sum of employee responsible amounts for all active plans (participant + dependents)
+  // Sum of employee responsible amounts for all plans (participant + dependents)
+  // Priority: Active rates > Pending rates > Most recent ended rates
   // All plans use employee responsible amount to avoid double-counting
   const calculateTotalEmployeeResponsibleAmount = () => {
     if (currentPlan.group_plan?.plan_type !== 'Age Banded') {
+      // For non-Age Banded plans, only return employee amount if the rate is actually active
+      // If there's no active rate (only pending or ended), return 0
+      if (!isCurrentRateActive) {
+        return 0;
+      }
       return currentEmployeeAmount;
     }
 
@@ -1071,18 +1152,38 @@ export default function ParticipantPlanDetailPage() {
 
     // Use rateHistory if available, otherwise fall back to allPlans
     if (rateHistory.length > 0) {
-      // For Age Banded plans, get the most recent rate for each plan (employee + all dependents)
-      // Include ALL rates regardless of start_date - we want to show the total for all plans
-      const latestRates = new Map<string, RateHistoryRecord>();
+      // For Age Banded plans, get the best available rate for each plan (employee + all dependents)
+      // Priority: Active > Pending > Most recent Ended
+      const latestRates = new Map<string, { record: RateHistoryRecord; status: 'Active' | 'Pending' | 'Ended'; priority: number }>();
       
       rateHistory.forEach(record => {
         if (!record.group_option_rate) return;
         
         const planId = record.participant_group_plan_id;
+        const startDate = record.start_date || record.group_option_rate.start_date || null;
+        const endDate = record.end_date || record.group_option_rate.end_date || null;
+        const rateStatus = calculateRateStatus(startDate, endDate);
+        
+        // Priority: Active = 1, Pending = 2, Ended = 3
+        const priority = rateStatus === 'Active' ? 1 : rateStatus === 'Pending' ? 2 : 3;
+        
         const existing = latestRates.get(planId);
-        // Keep the most recent rate for each plan (by created_at timestamp)
-        if (!existing || new Date(record.created_at) > new Date(existing.created_at)) {
-          latestRates.set(planId, record);
+        
+        if (!existing) {
+          // No existing rate for this plan, add this one
+          latestRates.set(planId, { record, status: rateStatus, priority });
+        } else {
+          // Compare priorities: lower priority number wins (Active beats Pending beats Ended)
+          if (priority < existing.priority) {
+            // This rate has better priority, use it
+            latestRates.set(planId, { record, status: rateStatus, priority });
+          } else if (priority === existing.priority) {
+            // Same priority, use the most recent one (by created_at timestamp)
+            if (new Date(record.created_at) > new Date(existing.record.created_at)) {
+              latestRates.set(planId, { record, status: rateStatus, priority });
+            }
+          }
+          // If existing has better priority, keep it
         }
       });
 
@@ -1091,7 +1192,7 @@ export default function ParticipantPlanDetailPage() {
       // - Employee plan (participant with no dependent_id)
       // - Spouse plan(s) (participant with dependent_id where relationship = 'Spouse')
       // - Child plan(s) (participant with dependent_id where relationship = 'Child')
-      latestRates.forEach((record, planId) => {
+      latestRates.forEach(({ record }, planId) => {
         // Get the rate
         const rate = record.rate_override !== null
           ? record.rate_override
@@ -1111,9 +1212,27 @@ export default function ParticipantPlanDetailPage() {
       });
     } else if (allPlans.length > 0) {
       // Fallback: use allPlans if rateHistory isn't loaded yet
-      // IMPORTANT: For Age Banded plans, sum employee responsible amounts for ALL plans
-      // This includes: employee plan + all spouse plans + all child plans
+      // IMPORTANT: For Age Banded plans, sum employee responsible amounts
+      // Priority: Active > Pending > Most recent Ended
+      const today = new Date().toISOString().split('T')[0];
+      
       allPlans.forEach(plan => {
+        // Only include plans that are currently active (no termination_date or termination_date is in the future)
+        if (plan.termination_date && plan.termination_date < today) {
+          return; // Skip terminated plans
+        }
+        
+        // Check rate status
+        const rateStartDate = plan.group_option_rate?.start_date;
+        const rateEndDate = plan.group_option_rate?.end_date;
+        const rateStatus = calculateRateStatus(rateStartDate || null, rateEndDate || null);
+        
+        // For fallback, include Active and Pending rates
+        // (Ended rates would require rateHistory to determine most recent)
+        if (rateStatus === 'Ended') {
+          return; // Skip ended rates in fallback mode
+        }
+        
         const planRate = plan.rate_override !== null
           ? plan.rate_override
           : plan.group_option_rate?.rate || 0;
@@ -1155,7 +1274,8 @@ export default function ParticipantPlanDetailPage() {
       });
     }
 
-    return total > 0 ? total : null;
+    // For Age Banded plans, always return a number (even if 0) so the card is always shown
+    return total;
   };
 
   // Function to calculate and store total Employee Responsible Amount
@@ -1656,7 +1776,7 @@ export default function ParticipantPlanDetailPage() {
               </div>
 
               {/* Current Rate Display and Employee Responsible Amount - Side by Side */}
-              {(displayRate !== null || totalEmployeeResponsibleAmount !== null) && (
+              {(displayRate !== null || (currentPlan.group_plan?.plan_type === 'Age Banded' && totalEmployeeResponsibleAmount !== null)) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Current Rate Display */}
                   {displayRate !== null && (
@@ -1683,14 +1803,14 @@ export default function ParticipantPlanDetailPage() {
                     </div>
                   )}
 
-                  {/* Employee Responsible Amount Indicator */}
-                  {totalEmployeeResponsibleAmount !== null && (
+                  {/* Employee Responsible Amount Indicator - Always show for Age Banded plans */}
+                  {currentPlan.group_plan?.plan_type === 'Age Banded' && totalEmployeeResponsibleAmount !== null && (
                     <div className="glass-card rounded-xl p-6 bg-blue-500/10 border border-blue-500/20">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Employee Responsible Amount</p>
                           <p className="text-xs text-[var(--glass-gray-medium)]">
-                            Summary of all active Participants Group plan rates
+                            Sum of all employee responsible amounts from rate history (active, pending, or most recent ended)
                           </p>
                         </div>
                         <div className="text-right">
@@ -1744,8 +1864,8 @@ export default function ParticipantPlanDetailPage() {
             ) : (() => {
               // Sort rate history by start_date descending (most recent first), then by created_at descending
               const sortedRateHistory = [...rateHistory].sort((a, b) => {
-                const aStartDate = a.group_option_rate?.start_date ? new Date(a.group_option_rate.start_date).getTime() : 0;
-                const bStartDate = b.group_option_rate?.start_date ? new Date(b.group_option_rate.start_date).getTime() : 0;
+                const aStartDate = (a.start_date || a.group_option_rate?.start_date) ? new Date(a.start_date || a.group_option_rate?.start_date || '').getTime() : 0;
+                const bStartDate = (b.start_date || b.group_option_rate?.start_date) ? new Date(b.start_date || b.group_option_rate?.start_date || '').getTime() : 0;
                 
                 if (bStartDate !== aStartDate) {
                   return bStartDate - aStartDate; // Descending order (newest first)
@@ -1759,39 +1879,39 @@ export default function ParticipantPlanDetailPage() {
               
               // Helper function to organize records by status
               const organizeByStatus = (records: RateHistoryRecord[]) => {
-                const planned = records.filter(r => {
+                const pending = records.filter(r => {
                   const status = calculateRateStatus(
-                    r.group_option_rate?.start_date || null,
-                    r.group_option_rate?.end_date || null
+                    r.start_date || r.group_option_rate?.start_date || null,
+                    r.end_date || r.group_option_rate?.end_date || null
                   );
-                  return status === 'Planned';
+                  return status === 'Pending';
                 });
                 
                 const active = records.filter(r => {
                   const status = calculateRateStatus(
-                    r.group_option_rate?.start_date || null,
-                    r.group_option_rate?.end_date || null
+                    r.start_date || r.group_option_rate?.start_date || null,
+                    r.end_date || r.group_option_rate?.end_date || null
                   );
                   return status === 'Active';
                 });
                 
                 const ended = records.filter(r => {
                   const status = calculateRateStatus(
-                    r.group_option_rate?.start_date || null,
-                    r.group_option_rate?.end_date || null
+                    r.start_date || r.group_option_rate?.start_date || null,
+                    r.end_date || r.group_option_rate?.end_date || null
                   );
                   return status === 'Ended';
                 });
                 
                 // Sort each group by start_date descending (newest first)
                 const sortByStartDate = (a: RateHistoryRecord, b: RateHistoryRecord) => {
-                  const aStart = a.group_option_rate?.start_date ? new Date(a.group_option_rate.start_date).getTime() : 0;
-                  const bStart = b.group_option_rate?.start_date ? new Date(b.group_option_rate.start_date).getTime() : 0;
+                  const aStart = (a.start_date || a.group_option_rate?.start_date) ? new Date(a.start_date || a.group_option_rate?.start_date || '').getTime() : 0;
+                  const bStart = (b.start_date || b.group_option_rate?.start_date) ? new Date(b.start_date || b.group_option_rate?.start_date || '').getTime() : 0;
                   return bStart - aStart;
                 };
                 
                 return {
-                  planned: planned.sort(sortByStartDate),
+                  pending: pending.sort(sortByStartDate),
                   active: active.sort(sortByStartDate),
                   ended: ended.sort(sortByStartDate)
                 };
@@ -1821,50 +1941,30 @@ export default function ParticipantPlanDetailPage() {
                   ? record.rate_override 
                   : record.group_option_rate?.rate || null;
                 
-                const employeeAmount = calculateEmployeeResponsibleAmount(recordRate, currentPlan);
+                // Find the matching plan for this record to get correct dependent relationship
+                const matchingPlan = allPlans.find(p => p.id === record.participant_group_plan_id) || currentPlan;
+                
+                // Always use calculateEmployeeResponsibleAmount to ensure correct calculation based on dependent relationship
+                // The stored employer_contribution_amount might be incorrect for dependents
+                const employeeAmount = calculateEmployeeResponsibleAmount(recordRate, matchingPlan);
                 const rateStatus = calculateRateStatus(
-                  record.group_option_rate?.start_date || null,
-                  record.group_option_rate?.end_date || null
+                  record.start_date || record.group_option_rate?.start_date || null,
+                  record.end_date || record.group_option_rate?.end_date || null
                 );
 
-                // Calculate contribution amount
-                let contributionAmount: number | null = null;
-                let contributionType: string | null = null;
-                let contributionValue: number | null = null;
-                
-                if (currentPlan?.group_plan) {
-                  contributionType = currentPlan.group_plan.employer_contribution_type;
-                  
-                  if (currentPlan.group_plan.plan_type === 'Age Banded') {
-                    if (!record.dependent_id) {
-                      // Employee
-                      contributionValue = currentPlan.group_plan.employer_contribution_value;
-                    } else if (record.dependent_relationship === 'Spouse') {
-                      contributionValue = currentPlan.group_plan.employer_spouse_contribution_value;
-                    } else if (record.dependent_relationship === 'Child') {
-                      contributionValue = currentPlan.group_plan.employer_child_contribution_value;
-                    }
-                  } else {
-                    contributionValue = currentPlan.group_plan.employer_contribution_value;
-                  }
-                  
-                  if (contributionType && contributionValue !== null && recordRate !== null) {
-                    if (contributionType === 'Percentage') {
-                      contributionAmount = recordRate * (contributionValue / 100);
-                    } else if (contributionType === 'Dollar Amount') {
-                      contributionAmount = contributionValue;
-                    }
-                  }
-                }
+                // Use the stored contribution amount from the rate history record
+                // This is the actual amount the employer contributed at the time this rate was active
+                const contributionAmount = record.employer_contribution_amount;
+                const contributionType = record.employer_contribution_type;
 
-                const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
-                  Planned: 'bg-blue-500/10 border-blue-500/20',
+                const statusColors: Record<'Pending' | 'Active' | 'Ended', string> = {
+                  Pending: 'bg-blue-500/10 border-blue-500/20',
                   Active: 'bg-green-500/10 border-green-500/20',
                   Ended: 'bg-gray-500/10 border-gray-500/20'
                 };
                 
-                const statusBadgeColors: Record<'Planned' | 'Active' | 'Ended', string> = {
-                  Planned: 'bg-blue-500/20 text-blue-700',
+                const statusBadgeColors: Record<'Pending' | 'Active' | 'Ended', string> = {
+                  Pending: 'bg-blue-500/20 text-blue-700',
                   Active: 'bg-green-500/20 text-green-700',
                   Ended: 'bg-gray-500/20 text-gray-700'
                 };
@@ -1883,8 +1983,8 @@ export default function ParticipantPlanDetailPage() {
                           </span>
                           {/* Date Range */}
                           <span className="text-sm text-[var(--glass-gray-medium)]">
-                            {record.group_option_rate?.start_date 
-                              ? `${formatDisplayDate(record.group_option_rate.start_date)} - ${record.group_option_rate.end_date ? formatDisplayDate(record.group_option_rate.end_date) : 'Ongoing'}`
+                            {(record.start_date || record.group_option_rate?.start_date)
+                              ? `${formatDisplayDate(record.start_date || record.group_option_rate?.start_date || '')} - ${(record.end_date || record.group_option_rate?.end_date) ? formatDisplayDate(record.end_date || record.group_option_rate?.end_date || '') : 'Ongoing'}`
                               : 'N/A'}
                           </span>
                         </div>
@@ -1975,7 +2075,7 @@ export default function ParticipantPlanDetailPage() {
                         Participant
                       </h3>
                       <div className="space-y-4">
-                        {renderStatusSection('Planned', participantByStatus.planned)}
+                        {renderStatusSection('Pending', participantByStatus.pending)}
                         {renderStatusSection('Active', participantByStatus.active)}
                         {renderStatusSection('Ended', participantByStatus.ended)}
                       </div>
@@ -1989,7 +2089,7 @@ export default function ParticipantPlanDetailPage() {
                         Spouse
                       </h3>
                       <div className="space-y-4">
-                        {renderStatusSection('Planned', spouseByStatus.planned)}
+                        {renderStatusSection('Pending', spouseByStatus.pending)}
                         {renderStatusSection('Active', spouseByStatus.active)}
                         {renderStatusSection('Ended', spouseByStatus.ended)}
                       </div>
@@ -2013,7 +2113,7 @@ export default function ParticipantPlanDetailPage() {
                                 </h4>
                               )}
                               <div className="space-y-4">
-                                {renderStatusSection('Planned', childByStatus.planned)}
+                                {renderStatusSection('Pending', childByStatus.pending)}
                                 {renderStatusSection('Active', childByStatus.active)}
                                 {renderStatusSection('Ended', childByStatus.ended)}
                               </div>
@@ -2036,7 +2136,14 @@ export default function ParticipantPlanDetailPage() {
           ? selectedRateRecord.rate_override 
           : selectedRateRecord.group_option_rate?.rate || null;
         
-        const employeeAmount = calculateEmployeeResponsibleAmount(recordRate, currentPlan);
+        // Use stored employer contribution amount from rate history
+        const contributionAmount = selectedRateRecord.employer_contribution_amount;
+        const contributionType = selectedRateRecord.employer_contribution_type;
+        
+        // Calculate employee responsible amount using stored employer contribution amount
+        const employeeAmount = recordRate !== null && contributionAmount !== null
+          ? Math.max(0, recordRate - contributionAmount)
+          : calculateEmployeeResponsibleAmount(recordRate, currentPlan);
 
         return (
           <div 
@@ -2053,43 +2160,61 @@ export default function ParticipantPlanDetailPage() {
               
               <div className="space-y-4">
                 <div className="glass-card rounded-xl p-4 bg-white/5 border border-white/10">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Rate Start Date</p>
-                      <p className="text-lg font-semibold text-[var(--glass-black-dark)]">
-                        {selectedRateRecord.group_option_rate?.start_date 
-                          ? formatDisplayDate(selectedRateRecord.group_option_rate.start_date)
-                          : 'N/A'}
-                      </p>
-                    </div>
-                    
-                    <div>
-                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">End Period</p>
-                      <p className="text-lg font-semibold text-[var(--glass-black-dark)]">
-                        {selectedRateRecord.group_option_rate?.end_date 
-                          ? formatDisplayDate(selectedRateRecord.group_option_rate.end_date)
-                          : selectedRateRecord.group_option_rate?.start_date 
-                            ? 'Present (Ongoing)'
+                  <div className="space-y-4">
+                    {/* Row 1: Rate Start Date and End Period */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Rate Start Date</p>
+                        <p className="text-lg font-semibold text-[var(--glass-black-dark)]">
+                          {selectedRateRecord.group_option_rate?.start_date 
+                            ? formatDisplayDate(selectedRateRecord.group_option_rate.start_date)
                             : 'N/A'}
-                      </p>
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <p className="text-sm text-[var(--glass-gray-medium)] mb-1">End Period</p>
+                        <p className="text-lg font-semibold text-[var(--glass-black-dark)]">
+                          {selectedRateRecord.group_option_rate?.end_date 
+                            ? formatDisplayDate(selectedRateRecord.group_option_rate.end_date)
+                            : selectedRateRecord.group_option_rate?.start_date 
+                              ? 'Present (Ongoing)'
+                              : 'N/A'}
+                        </p>
+                      </div>
                     </div>
                     
-                    <div>
-                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Rate</p>
-                      <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
-                        {recordRate !== null ? `$${recordRate.toFixed(2)}` : 'N/A'}
-                      </p>
-                      {selectedRateRecord.rate_override !== null && (
-                        <p className="text-xs text-[var(--glass-gray-medium)] mt-1">Custom override</p>
+                    {/* Row 2: Rate and Contribution Amount side by side */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Rate</p>
+                        <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                          {recordRate !== null ? `$${recordRate.toFixed(2)}` : 'N/A'}
+                        </p>
+                        {selectedRateRecord.rate_override !== null && (
+                          <p className="text-xs text-[var(--glass-gray-medium)] mt-1">Custom override</p>
+                        )}
+                      </div>
+                      
+                      {contributionAmount !== null && (
+                        <div>
+                          <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Contribution Amount</p>
+                          <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                            ${contributionAmount.toFixed(2)}
+                          </p>
+                        </div>
                       )}
                     </div>
                     
-                    <div>
-                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Employee Responsible</p>
-                      <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
-                        {employeeAmount !== null ? `$${employeeAmount.toFixed(2)}` : 'N/A'}
-                      </p>
-                    </div>
+                    {/* Row 3: Employee Responsible below Rate */}
+                    {employeeAmount !== null && (
+                      <div>
+                        <p className="text-sm text-[var(--glass-gray-medium)] mb-1">Employee Responsible</p>
+                        <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                          ${employeeAmount.toFixed(2)}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

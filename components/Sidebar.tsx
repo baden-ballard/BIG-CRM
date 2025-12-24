@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 interface NavItem {
@@ -30,14 +31,18 @@ export default function Sidebar({ items }: SidebarProps) {
         <div className="mb-8 pb-6 border-b border-white/20">
           <Link href="/" className="block">
             <div className="relative w-full max-w-[200px]">
-              <img
+              <Image
                 src="/assets/ballard-logo.png"
                 alt="Ballard Insurance Group LLC"
+                width={1360}
+                height={347}
                 className="h-auto w-full max-w-[200px]"
                 style={{ 
                   backgroundColor: 'transparent',
+                  background: 'none',
                   display: 'block'
                 }}
+                priority
               />
             </div>
           </Link>

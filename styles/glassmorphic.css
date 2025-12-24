@@ -178,6 +178,17 @@
     inset -1px 0 0 0 rgba(255, 255, 255, 0.2);
 }
 
+.glass-sidebar img {
+  background: none !important;
+  background-color: transparent !important;
+}
+
+.glass-sidebar span[style*="display: inline-block"],
+.glass-sidebar span[style*="display:inline-block"] {
+  background: none !important;
+  background-color: transparent !important;
+}
+
 /* ============================================
    GLASS INPUT
    ============================================ */

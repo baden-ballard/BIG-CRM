@@ -710,6 +710,15 @@ export default function GroupDetailPage() {
 
   const formatDisplayDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      // Create date using local time (month is 0-indexed in Date constructor)
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString();
+    }
+    // For datetime strings, use the original behavior
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -1179,7 +1188,7 @@ export default function GroupDetailPage() {
                 onClick={() => toggleSection('group-information')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['group-information'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['group-information'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Group Information</span>
@@ -1400,7 +1409,7 @@ export default function GroupDetailPage() {
                 onClick={() => toggleSection('plans')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['plans'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['plans'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Plans</span>
@@ -1552,7 +1561,7 @@ export default function GroupDetailPage() {
                 onClick={() => toggleSection('participants')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['participants'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['participants'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Participants</span>
@@ -1620,7 +1629,7 @@ export default function GroupDetailPage() {
                 onClick={() => toggleSection('renewal')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['renewal'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['renewal'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Renewal</span>
@@ -1841,7 +1850,7 @@ export default function GroupDetailPage() {
                 onClick={() => toggleSection('sales-status')}
                 className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
               >
-                <span className={`transform transition-transform ${collapsedSections['sales-status'] ? 'rotate-180' : ''}`}>
+                <span className={`text-lg transform transition-transform ${collapsedSections['sales-status'] ? 'rotate-180' : ''}`}>
                   ▼
                 </span>
                 <span>Sales Status</span>
@@ -2021,7 +2030,7 @@ export default function GroupDetailPage() {
               onClick={() => toggleSection('notes')}
               className="flex items-center gap-2 text-2xl font-bold text-[var(--glass-black-dark)] hover:opacity-80 transition-opacity"
             >
-              <span className={`transform transition-transform ${collapsedSections['notes'] ? 'rotate-180' : ''}`}>
+              <span className={`text-lg transform transition-transform ${collapsedSections['notes'] ? 'rotate-180' : ''}`}>
                 ▼
               </span>
               <span>Notes</span>

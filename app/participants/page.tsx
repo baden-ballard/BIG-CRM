@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import GlassCard from '../../components/GlassCard';
 import GlassButton from '../../components/GlassButton';
 import SearchFilter from '../../components/SearchFilter';
+import ReportsDropdown from '../../components/ReportsDropdown';
 import { supabase } from '../../lib/supabase';
 
 interface Participant {
@@ -25,6 +26,20 @@ interface Group {
   name: string;
 }
 
+interface ActiveGroupPlan {
+  id: string;
+  plan_name: string;
+  option: string;
+  total_employee_responsible_amount: number | null;
+}
+
+interface ActiveMedicarePlan {
+  id: string;
+  plan_name: string;
+  provider_name: string;
+  rate: number | null;
+}
+
 export default function ParticipantsPage() {
   const router = useRouter();
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -38,6 +53,8 @@ export default function ParticipantsPage() {
   const searchFilterClearRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [participantGroupPlans, setParticipantGroupPlans] = useState<Record<string, ActiveGroupPlan[]>>({});
+  const [participantMedicarePlans, setParticipantMedicarePlans] = useState<Record<string, ActiveMedicarePlan[]>>({});
 
   useEffect(() => {
     fetchParticipants();
@@ -84,6 +101,8 @@ export default function ParticipantsPage() {
       await fetchMedicarePlans(participantsData.map(p => p.id));
       // Fetch active Medicare plans
       await fetchActiveMedicarePlans(participantsData.map(p => p.id));
+      // Fetch active group plans and Medicare plans for display
+      await fetchActivePlansForParticipants(participantsData.map(p => p.id));
 
       setParticipants(participantsData);
       setFilteredParticipants(participantsData);
@@ -169,6 +188,179 @@ export default function ParticipantsPage() {
     }
   };
 
+  const fetchActivePlansForParticipants = async (participantIds: string[]) => {
+    if (participantIds.length === 0) {
+      setParticipantGroupPlans({});
+      setParticipantMedicarePlans({});
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayString = today.toISOString().split('T')[0];
+
+    try {
+      // Fetch active group plans (only employee plans, not dependents)
+      const { data: groupPlansData, error: groupPlansError } = await supabase
+        .from('participant_group_plans')
+        .select(`
+          id,
+          participant_id,
+          total_employee_responsible_amount,
+          termination_date,
+          dependent_id,
+          group_plan_option_id,
+          group_plan:group_plans (
+            id,
+            plan_name,
+            termination_date
+          ),
+          group_plan_option:group_plan_options (
+            id,
+            option
+          )
+        `)
+        .in('participant_id', participantIds)
+        .is('termination_date', null)
+        .is('dependent_id', null)
+        .order('created_at', { ascending: false });
+
+      if (groupPlansError) {
+        console.error('Error fetching group plans:', groupPlansError);
+      } else {
+        const groupPlansMap: Record<string, ActiveGroupPlan[]> = {};
+        
+        (groupPlansData || []).forEach((plan: any) => {
+          const participantId = plan.participant_id;
+          
+          // Check if group plan is still active (not terminated)
+          const groupPlanTerminationDate = plan.group_plan?.termination_date 
+            ? new Date(plan.group_plan.termination_date)
+            : null;
+          
+          if (groupPlanTerminationDate && groupPlanTerminationDate < today) {
+            return; // Skip terminated group plans
+          }
+
+          // Get the option from group_plan_option
+          const option = plan.group_plan_option?.option || 'N/A';
+
+          if (!groupPlansMap[participantId]) {
+            groupPlansMap[participantId] = [];
+          }
+
+          // Only add employee plans (dependent_id is null)
+          // Filter duplicates by plan name and option
+          const planKey = `${plan.group_plan?.plan_name}-${option}`;
+          const existingPlan = groupPlansMap[participantId].find(
+            p => `${p.plan_name}-${p.option}` === planKey
+          );
+
+          if (!existingPlan) {
+            groupPlansMap[participantId].push({
+              id: plan.id,
+              plan_name: plan.group_plan?.plan_name || 'Unknown Plan',
+              option: option,
+              total_employee_responsible_amount: plan.total_employee_responsible_amount,
+            });
+          }
+        });
+
+        setParticipantGroupPlans(groupPlansMap);
+      }
+
+      // Fetch active Medicare plans
+      const { data: medicarePlansData, error: medicarePlansError } = await supabase
+        .from('participant_medicare_plans')
+        .select(`
+          id,
+          participant_id,
+          effective_date,
+          medicare_plan:medicare_plans (
+            id,
+            plan_name,
+            provider:providers (
+              id,
+              name
+            )
+          ),
+          medicare_child_rate:medicare_child_rates (
+            id,
+            rate,
+            start_date,
+            end_date
+          )
+        `)
+        .in('participant_id', participantIds)
+        .order('created_at', { ascending: false });
+
+      if (medicarePlansError) {
+        console.error('Error fetching Medicare plans:', medicarePlansError);
+      } else {
+        const medicarePlansMap: Record<string, ActiveMedicarePlan[]> = {};
+        
+        (medicarePlansData || []).forEach((plan: any) => {
+          const participantId = plan.participant_id;
+          
+          // Check if plan is active (effective_date is today or in the past, or null)
+          if (plan.effective_date) {
+            const effectiveDate = new Date(plan.effective_date);
+            effectiveDate.setHours(0, 0, 0, 0);
+            if (effectiveDate > today) {
+              return; // Skip future-dated plans
+            }
+          }
+
+          // Get the active rate
+          let activeRate: number | null = null;
+          if (plan.medicare_child_rate) {
+            const rate = Array.isArray(plan.medicare_child_rate) 
+              ? plan.medicare_child_rate[0] 
+              : plan.medicare_child_rate;
+            
+            if (rate) {
+              const rateStartDate = rate.start_date ? new Date(rate.start_date) : null;
+              const rateEndDate = rate.end_date ? new Date(rate.end_date) : null;
+              
+              // Check if rate is currently active
+              if (rateStartDate && rateStartDate <= today && (!rateEndDate || rateEndDate >= today)) {
+                activeRate = rate.rate;
+              } else if (!rateStartDate) {
+                // If no start date, use the rate
+                activeRate = rate.rate;
+              }
+            }
+          }
+
+          if (!medicarePlansMap[participantId]) {
+            medicarePlansMap[participantId] = [];
+          }
+
+          const planName = plan.medicare_plan?.plan_name || 'Unknown Plan';
+          const providerName = plan.medicare_plan?.provider?.name || 'Unknown Provider';
+          
+          // Avoid duplicates
+          const existingPlan = medicarePlansMap[participantId].find(
+            p => p.plan_name === planName && p.provider_name === providerName
+          );
+
+          if (!existingPlan) {
+            medicarePlansMap[participantId].push({
+              id: plan.id,
+              plan_name: planName,
+              provider_name: providerName,
+              rate: activeRate,
+            });
+          }
+        });
+
+        setParticipantMedicarePlans(medicarePlansMap);
+      }
+    } catch (err: any) {
+      console.error('Error fetching active plans:', err);
+    }
+  };
+
   // Get unique group IDs for filter
   const groupFilterOptions = Object.values(groups).map(group => ({
     label: group.name,
@@ -229,6 +421,13 @@ export default function ParticipantsPage() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString();
+    }
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -293,6 +492,7 @@ export default function ParticipantsPage() {
             clearFiltersRef={searchFilterClearRef}
             actions={
               <>
+                <ReportsDropdown />
                 <button
                   onClick={handleActiveFilter}
                   className={`px-6 py-3 rounded-full font-semibold transition-all duration-300 shadow-lg hover:shadow-xl ${
@@ -341,7 +541,7 @@ export default function ParticipantsPage() {
                 <h3 className="text-xl font-bold text-[var(--glass-black-dark)] mb-4">
                   {participant.client_name}
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm mb-4">
                   {participant.group_id && groups[participant.group_id] && (
                     <div>
                       <span className="text-[var(--glass-gray-medium)]">Group: </span>
@@ -375,6 +575,66 @@ export default function ParticipantsPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Active Group Plans */}
+                {participantGroupPlans[participant.id] && participantGroupPlans[participant.id].length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-200/30">
+                    <h4 className="text-sm font-semibold text-[var(--glass-gray-medium)] mb-2">
+                      Active Group Plans:
+                    </h4>
+                    <div className="space-y-2">
+                      {participantGroupPlans[participant.id].map((plan) => (
+                        <div key={plan.id} className="text-sm">
+                          <span className="text-[var(--glass-black-dark)] font-medium">
+                            {plan.plan_name}
+                          </span>
+                          <span className="text-[var(--glass-gray-medium)] mx-2">•</span>
+                          <span className="text-[var(--glass-gray-medium)]">Class/Option: </span>
+                          <span className="text-[var(--glass-black-dark)]">{plan.option}</span>
+                          {plan.total_employee_responsible_amount !== null && (
+                            <>
+                              <span className="text-[var(--glass-gray-medium)] mx-2">•</span>
+                              <span className="text-[var(--glass-gray-medium)]">Employee Responsible: </span>
+                              <span className="text-[var(--glass-black-dark)]">
+                                ${plan.total_employee_responsible_amount.toFixed(2)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Medicare Plans */}
+                {participantMedicarePlans[participant.id] && participantMedicarePlans[participant.id].length > 0 && (
+                  <div className={`mt-4 pt-4 ${participantGroupPlans[participant.id]?.length > 0 ? '' : 'border-t border-gray-200/30'}`}>
+                    <h4 className="text-sm font-semibold text-[var(--glass-gray-medium)] mb-2">
+                      Active Medicare Plans:
+                    </h4>
+                    <div className="space-y-2">
+                      {participantMedicarePlans[participant.id].map((plan) => (
+                        <div key={plan.id} className="text-sm">
+                          <span className="text-[var(--glass-black-dark)] font-medium">
+                            {plan.plan_name}
+                          </span>
+                          <span className="text-[var(--glass-gray-medium)] mx-2">•</span>
+                          <span className="text-[var(--glass-gray-medium)]">Provider: </span>
+                          <span className="text-[var(--glass-black-dark)]">{plan.provider_name}</span>
+                          {plan.rate !== null && (
+                            <>
+                              <span className="text-[var(--glass-gray-medium)] mx-2">•</span>
+                              <span className="text-[var(--glass-gray-medium)]">Rate: </span>
+                              <span className="text-[var(--glass-black-dark)]">
+                                ${plan.rate.toFixed(2)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </GlassCard>
           ))}

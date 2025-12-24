@@ -153,6 +153,17 @@ export default function ParticipantMedicarePlanDetailPage() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    }
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -160,15 +171,15 @@ export default function ParticipantMedicarePlanDetailPage() {
     });
   };
 
-  const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+  const calculateRateStatus = (startDate: string | null, endDate: string | null): 'Pending' | 'Active' | 'Ended' => {
     if (!startDate) return 'Ended';
     
     const today = new Date().toISOString().split('T')[0];
     const start = new Date(startDate).toISOString().split('T')[0];
     
-    // If start date is in the future, it's Planned
+    // If start date is in the future, it's Pending
     if (start > today) {
-      return 'Planned';
+      return 'Pending';
     }
     
     // If end date is null or in the future, it's Active
@@ -182,14 +193,14 @@ export default function ParticipantMedicarePlanDetailPage() {
 
   // Find the current rate record from rateHistory with priority:
   // 1. Current rate (status "Active")
-  // 2. Next planned rate (status "Planned", earliest start_date)
+  // 2. Next pending rate (status "Pending", earliest start_date)
   // 3. Last rate (most recent by start_date)
   const getCurrentRateRecord = (): MedicareChildRate | null => {
     if (!rateHistory || rateHistory.length === 0) return null;
 
     // Categorize rates by status
     const activeRates: MedicareChildRate[] = [];
-    const plannedRates: MedicareChildRate[] = [];
+    const pendingRates: MedicareChildRate[] = [];
     const endedRates: MedicareChildRate[] = [];
 
     rateHistory.forEach(rate => {
@@ -197,8 +208,8 @@ export default function ParticipantMedicarePlanDetailPage() {
 
       if (status === 'Active') {
         activeRates.push(rate);
-      } else if (status === 'Planned') {
-        plannedRates.push(rate);
+      } else if (status === 'Pending') {
+        pendingRates.push(rate);
       } else {
         endedRates.push(rate);
       }
@@ -213,9 +224,9 @@ export default function ParticipantMedicarePlanDetailPage() {
       });
     }
 
-    // Priority 2: Return the next planned rate (earliest start_date)
-    if (plannedRates.length > 0) {
-      return plannedRates.reduce((earliest, current) => {
+    // Priority 2: Return the next pending rate (earliest start_date)
+    if (pendingRates.length > 0) {
+      return pendingRates.reduce((earliest, current) => {
         const currentStart = current.start_date 
           ? new Date(current.start_date).getTime() 
           : Infinity;
@@ -367,8 +378,8 @@ export default function ParticipantMedicarePlanDetailPage() {
                         <p className="text-xs text-[var(--glass-gray-medium)] mt-1">
                           {calculateRateStatus(currentRateRecord.start_date, currentRateRecord.end_date) === 'Active' 
                             ? 'Current rate' 
-                            : calculateRateStatus(currentRateRecord.start_date, currentRateRecord.end_date) === 'Planned'
-                            ? 'Next planned rate'
+                            : calculateRateStatus(currentRateRecord.start_date, currentRateRecord.end_date) === 'Pending'
+                            ? 'Next pending rate'
                             : 'Last rate'}
                         </p>
                       )}
@@ -389,7 +400,7 @@ export default function ParticipantMedicarePlanDetailPage() {
               );
             })()}
 
-            {/* Rate History Section - Organized by Planned, Active, Ended */}
+            {/* Rate History Section - Organized by Pending, Active, Ended */}
             <div className="pt-4">
               <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
                 Rate History
@@ -398,9 +409,9 @@ export default function ParticipantMedicarePlanDetailPage() {
                 const allRates = rateHistory || [];
                 
                 // Group rates by status
-                const plannedRates = allRates.filter(rateRecord => {
+                const pendingRates = allRates.filter(rateRecord => {
                   const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
-                  return status === 'Planned';
+                  return status === 'Pending';
                 });
                 
                 const activeRates = allRates.filter(rateRecord => {
@@ -413,8 +424,8 @@ export default function ParticipantMedicarePlanDetailPage() {
                   return status === 'Ended';
                 });
                 
-                // Sort each group: Planned and Active by start_date descending (newest first), Ended by start_date descending (most recent ended first)
-                const sortedPlannedRates = [...plannedRates].sort((a, b) => {
+                // Sort each group: Pending and Active by start_date descending (newest first), Ended by start_date descending (most recent ended first)
+                const sortedPendingRates = [...pendingRates].sort((a, b) => {
                   const dateA = a.start_date ? new Date(a.start_date).getTime() : 0;
                   const dateB = b.start_date ? new Date(b.start_date).getTime() : 0;
                   return dateB - dateA;
@@ -432,13 +443,13 @@ export default function ParticipantMedicarePlanDetailPage() {
                   return dateB - dateA;
                 });
                 
-                const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
-                  Planned: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
+                const statusColors: Record<'Pending' | 'Active' | 'Ended', string> = {
+                  Pending: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
                   Active: 'bg-green-500/10 border-green-500/20 text-green-700',
                   Ended: 'bg-gray-500/10 border-gray-500/20 text-gray-700'
                 };
                 
-                const renderRateCard = (rateRecord: MedicareChildRate, status: 'Planned' | 'Active' | 'Ended') => (
+                const renderRateCard = (rateRecord: MedicareChildRate, status: 'Pending' | 'Active' | 'Ended') => (
                   <div
                     key={rateRecord.id}
                     className={`glass-card rounded-lg p-3 border ${statusColors[status]} transition-all`}
@@ -447,7 +458,7 @@ export default function ParticipantMedicarePlanDetailPage() {
                       <div>
                         <span className="font-semibold">Status: </span>
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          status === 'Planned' ? 'bg-blue-500/20 text-blue-700' :
+                          status === 'Pending' ? 'bg-blue-500/20 text-blue-700' :
                           status === 'Active' ? 'bg-green-500/20 text-green-700' :
                           'bg-gray-500/20 text-gray-700'
                         }`}>
@@ -456,11 +467,21 @@ export default function ParticipantMedicarePlanDetailPage() {
                       </div>
                       <div>
                         <span className="font-semibold">Rate Start Date: </span>
-                        <span>{rateRecord.start_date ? new Date(rateRecord.start_date).toLocaleDateString() : 'N/A'}</span>
+                        <span>{rateRecord.start_date ? (() => {
+                          const dateOnlyMatch = rateRecord.start_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                          return dateOnlyMatch 
+                            ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                            : new Date(rateRecord.start_date).toLocaleDateString();
+                        })() : 'N/A'}</span>
                       </div>
                       <div>
                         <span className="font-semibold">Rate End Date: </span>
-                        <span>{rateRecord.end_date ? new Date(rateRecord.end_date).toLocaleDateString() : 'Ongoing'}</span>
+                        <span>{rateRecord.end_date ? (() => {
+                          const dateOnlyMatch = rateRecord.end_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                          return dateOnlyMatch 
+                            ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                            : new Date(rateRecord.end_date).toLocaleDateString();
+                        })() : 'Ongoing'}</span>
                       </div>
                     </div>
                     <div className="mt-2 text-xs text-[var(--glass-gray-medium)]">
@@ -478,14 +499,14 @@ export default function ParticipantMedicarePlanDetailPage() {
                 
                 return (
                   <div className="space-y-4">
-                    {/* Planned Rates Section */}
-                    {sortedPlannedRates.length > 0 && (
+                    {/* Pending Rates Section */}
+                    {sortedPendingRates.length > 0 && (
                       <div>
                         <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
-                          Planned
+                          Pending
                         </h5>
                         <div className="space-y-3">
-                          {sortedPlannedRates.map(rateRecord => renderRateCard(rateRecord, 'Planned'))}
+                          {sortedPendingRates.map(rateRecord => renderRateCard(rateRecord, 'Pending'))}
                         </div>
                       </div>
                     )}

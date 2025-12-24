@@ -93,6 +93,13 @@ export default function ProvidersPage() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString();
+    }
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -190,5 +197,6 @@ export default function ProvidersPage() {
     </div>
   );
 }
+
 
 

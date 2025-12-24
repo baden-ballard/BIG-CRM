@@ -10,6 +10,10 @@ interface ParticipantGroupPlanRate {
   created_at: string;
   participant_group_plan_id: string;
   group_option_rate_id: string | null;
+  employer_contribution_type: string | null;
+  employer_contribution_amount: number | null;
+  start_date: string | null;
+  end_date: string | null;
   participant_group_plan: {
     id: string;
     participant_id: string;
@@ -64,6 +68,10 @@ export default function ParticipantGroupPlanRatesPage() {
           created_at,
           participant_group_plan_id,
           group_option_rate_id,
+          employer_contribution_type,
+          employer_contribution_amount,
+          start_date,
+          end_date,
           participant_group_plan:participant_group_plans (
             id,
             participant_id,
@@ -111,6 +119,15 @@ export default function ParticipantGroupPlanRatesPage() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      // Create date using local time (month is 0-indexed in Date constructor)
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString();
+    }
+    // For datetime strings, use the original behavior
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -119,69 +136,57 @@ export default function ParticipantGroupPlanRatesPage() {
   };
 
   const getEmployerContributionInfo = (rateRecord: ParticipantGroupPlanRate) => {
-    if (!rateRecord.participant_group_plan?.group_plan) {
-      return { type: null, amount: null };
-    }
-
-    const plan = rateRecord.participant_group_plan.group_plan;
-    const dependent = rateRecord.participant_group_plan.dependent;
-    const contributionType = plan.employer_contribution_type;
-    let contributionValue: number | null = null;
-
-    // For Age Banded plans, use the appropriate contribution value based on dependent type
-    if (plan.plan_type === 'Age Banded') {
-      if (!dependent) {
-        // Employee
-        contributionValue = plan.employer_contribution_value;
-      } else if (dependent.relationship === 'Spouse') {
-        // Spouse
-        contributionValue = plan.employer_spouse_contribution_value;
-      } else if (dependent.relationship === 'Child') {
-        // Child
-        contributionValue = plan.employer_child_contribution_value;
-      }
-    } else {
-      // For non-Age Banded plans, use the standard contribution value
-      contributionValue = plan.employer_contribution_value;
-    }
-
-    return { type: contributionType, amount: contributionValue };
+    // Use the stored values from the rate history record
+    // These are snapshots of the contribution info at the time the rate was created
+    return { 
+      type: rateRecord.employer_contribution_type, 
+      amount: rateRecord.employer_contribution_amount 
+    };
   };
 
   const calculateEmployeeResponsibleAmount = (rate: number | null, rateRecord: ParticipantGroupPlanRate) => {
     if (rate === null || rate === 0) return null;
-    if (!rateRecord.participant_group_plan?.group_plan) return null;
-
-    const plan = rateRecord.participant_group_plan.group_plan;
-    const dependent = rateRecord.participant_group_plan.dependent;
     
     let amountPaidByEmployer = 0;
     let contributionValue: number | null = null;
-    const contributionType = plan.employer_contribution_type;
+    const contributionType = rateRecord.employer_contribution_type || rateRecord.participant_group_plan?.group_plan?.employer_contribution_type;
+    const planType = rateRecord.participant_group_plan?.group_plan?.plan_type;
+    const dependentRelationship = rateRecord.participant_group_plan?.dependent?.relationship;
 
     // For Age Banded plans, use the appropriate contribution value based on dependent type
-    if (plan.plan_type === 'Age Banded') {
-      if (!dependent) {
+    if (planType === 'Age Banded') {
+      if (!rateRecord.participant_group_plan?.dependent) {
         // Employee
-        contributionValue = plan.employer_contribution_value;
-      } else if (dependent.relationship === 'Spouse') {
+        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value;
+      } else if (dependentRelationship === 'Spouse') {
         // Spouse
-        contributionValue = plan.employer_spouse_contribution_value;
-      } else if (dependent.relationship === 'Child') {
+        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_spouse_contribution_value;
+      } else if (dependentRelationship === 'Child') {
         // Child
-        contributionValue = plan.employer_child_contribution_value;
+        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_child_contribution_value;
       }
     } else {
       // For non-Age Banded plans, use the standard contribution value
-      contributionValue = plan.employer_contribution_value;
+      contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value;
     }
 
-    if (contributionType && contributionValue !== null) {
+    // If we can't determine the contribution value from the plan, fall back to stored amount
+    if (contributionValue === null || contributionValue === undefined) {
+      const storedAmount = rateRecord.employer_contribution_amount;
+      if (storedAmount !== null && storedAmount !== undefined) {
+        amountPaidByEmployer = storedAmount;
+      } else {
+        return null;
+      }
+    } else if (contributionType && contributionValue !== null) {
+      // Calculate the actual dollar amount based on contribution type
       if (contributionType === 'Percentage') {
         amountPaidByEmployer = rate * (contributionValue / 100);
-      } else if (contributionType === 'Dollar Amount') {
+      } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
         amountPaidByEmployer = contributionValue;
       }
+    } else {
+      return null;
     }
 
     return Math.max(0, rate - amountPaidByEmployer);
@@ -257,6 +262,12 @@ export default function ParticipantGroupPlanRatesPage() {
             <thead>
               <tr className="border-b border-white/20">
                 <th className="text-left py-4 px-4 text-sm font-semibold text-[var(--glass-black-dark)]">
+                  Record ID
+                </th>
+                <th className="text-left py-4 px-4 text-sm font-semibold text-[var(--glass-black-dark)]">
+                  Rate History ID
+                </th>
+                <th className="text-left py-4 px-4 text-sm font-semibold text-[var(--glass-black-dark)]">
                   Created At
                 </th>
                 <th className="text-left py-4 px-4 text-sm font-semibold text-[var(--glass-black-dark)]">
@@ -300,7 +311,7 @@ export default function ParticipantGroupPlanRatesPage() {
             <tbody>
               {rates.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="text-center py-8 text-[var(--glass-gray-medium)]">
+                  <td colSpan={15} className="text-center py-8 text-[var(--glass-gray-medium)]">
                     No participant group plan rates found
                   </td>
                 </tr>
@@ -310,6 +321,12 @@ export default function ParticipantGroupPlanRatesPage() {
                     key={rate.id}
                     className="border-b border-white/10 hover:bg-white/5 transition-colors"
                   >
+                    <td className="py-4 px-4 text-sm text-[var(--glass-black-dark)] font-mono text-xs">
+                      {rate.id}
+                    </td>
+                    <td className="py-4 px-4 text-sm text-[var(--glass-black-dark)] font-mono text-xs">
+                      {rate.group_option_rate_id || 'N/A'}
+                    </td>
                     <td className="py-4 px-4 text-sm text-[var(--glass-black-dark)]">
                       {formatDateTime(rate.created_at)}
                     </td>
@@ -338,13 +355,10 @@ export default function ParticipantGroupPlanRatesPage() {
                     <td className="py-4 px-4 text-sm text-[var(--glass-black-dark)]">
                       {(() => {
                         const contributionInfo = getEmployerContributionInfo(rate);
-                        if (contributionInfo.amount === null) return 'N/A';
-                        if (contributionInfo.type === 'Percentage') {
-                          return `${contributionInfo.amount}%`;
-                        } else if (contributionInfo.type === 'Dollar Amount') {
-                          return `$${contributionInfo.amount.toFixed(2)}`;
-                        }
-                        return 'N/A';
+                        if (contributionInfo.amount === null || contributionInfo.amount === undefined) return 'N/A';
+                        // The employer_contribution_amount is stored as a dollar amount
+                        // Display it as currency
+                        return `$${contributionInfo.amount.toFixed(2)}`;
                       })()}
                     </td>
                     <td className="py-4 px-4 text-sm font-semibold text-[var(--glass-black-dark)]">
@@ -356,13 +370,13 @@ export default function ParticipantGroupPlanRatesPage() {
                         : 'N/A'}
                     </td>
                     <td className="py-4 px-4 text-sm text-[var(--glass-black-dark)]">
-                      {formatDate(rate.group_option_rate?.start_date || null)}
+                      {formatDate(rate.start_date || rate.group_option_rate?.start_date || null)}
                     </td>
                     <td className="py-4 px-4 text-sm text-[var(--glass-black-dark)]">
-                      {formatDate(rate.group_option_rate?.end_date || null)}
+                      {formatDate(rate.end_date || rate.group_option_rate?.end_date || null)}
                     </td>
                     <td className="py-4 px-4">
-                      {rate.group_option_rate?.end_date ? (
+                      {(rate.end_date || rate.group_option_rate?.end_date) ? (
                         <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-700">
                           Inactive
                         </span>

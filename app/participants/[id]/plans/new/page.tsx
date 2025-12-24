@@ -1319,8 +1319,20 @@ export default function NewParticipantPlanPage() {
                   return (
                     <option key={rate.id} value={rate.id}>
                       ${rate.rate.toFixed(2)}
-                      {rate.start_date && ` (from ${new Date(rate.start_date).toLocaleDateString()})`}
-                      {rate.end_date && ` (until ${new Date(rate.end_date).toLocaleDateString()})`}
+                      {rate.start_date && (() => {
+                        const dateOnlyMatch = rate.start_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                        const displayDate = dateOnlyMatch 
+                          ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                          : new Date(rate.start_date).toLocaleDateString();
+                        return ` (from ${displayDate})`;
+                      })()}
+                      {rate.end_date && (() => {
+                        const dateOnlyMatch = rate.end_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                        const displayDate = dateOnlyMatch 
+                          ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                          : new Date(rate.end_date).toLocaleDateString();
+                        return ` (until ${displayDate})`;
+                      })()}
                       {isActiveForEffectiveDate && formData.effective_date && ' - Active for effective date'}
                     </option>
                   );

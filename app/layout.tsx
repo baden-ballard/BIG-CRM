@@ -16,6 +16,7 @@ const navItems = [
   { href: '/programs', label: 'Programs' },
   { href: '/providers', label: 'Providers' },
   { href: '/participant-group-plan-rates', label: 'Participant Group Plan Rates' },
+  { href: '/group-plan-options-rate-history', label: 'Group Plan Options Rate History' },
 ];
 
 export default function RootLayout({
@@ -38,5 +39,6 @@ export default function RootLayout({
     </html>
   );
 }
+
 
 

@@ -262,6 +262,17 @@ export default function ViewMedicarePlanPage() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    }
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -278,13 +289,13 @@ export default function ViewMedicarePlanPage() {
   };
 
   // Helper function to calculate rate status based on dates
-  const calculateRateStatus = (startDate: string, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+  const calculateRateStatus = (startDate: string, endDate: string | null): 'Pending' | 'Active' | 'Ended' => {
     const today = new Date().toISOString().split('T')[0];
     const start = new Date(startDate).toISOString().split('T')[0];
     
-    // If start date is in the future, it's Planned
+    // If start date is in the future, it's Pending
     if (start > today) {
-      return 'Planned';
+      return 'Pending';
     }
     
     // If end date is null or in the future, it's Active
@@ -758,9 +769,9 @@ export default function ViewMedicarePlanPage() {
               </p>
             ) : (() => {
               // Group rates by status
-              const plannedRates = childRates.filter(rate => {
+              const pendingRates = childRates.filter(rate => {
                 const status = calculateRateStatus(rate.start_date, rate.end_date);
-                return status === 'Planned';
+                return status === 'Pending';
               });
               
               const activeRates = childRates.filter(rate => {
@@ -774,7 +785,7 @@ export default function ViewMedicarePlanPage() {
               });
               
               // Sort each group by start_date descending (newest first)
-              const sortedPlannedRates = [...plannedRates].sort((a, b) => 
+              const sortedPendingRates = [...pendingRates].sort((a, b) => 
                 new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
               );
               
@@ -786,19 +797,19 @@ export default function ViewMedicarePlanPage() {
                 new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
               );
               
-              const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
-                Planned: 'bg-blue-500/10 border-blue-500/20',
+              const statusColors: Record<'Pending' | 'Active' | 'Ended', string> = {
+                Pending: 'bg-blue-500/10 border-blue-500/20',
                 Active: 'bg-green-500/10 border-green-500/20',
                 Ended: 'bg-gray-500/10 border-gray-500/20'
               };
               
-              const statusBadgeColors: Record<'Planned' | 'Active' | 'Ended', string> = {
-                Planned: 'bg-blue-500/20 text-blue-700',
+              const statusBadgeColors: Record<'Pending' | 'Active' | 'Ended', string> = {
+                Pending: 'bg-blue-500/20 text-blue-700',
                 Active: 'bg-green-500/20 text-green-700',
                 Ended: 'bg-gray-500/20 text-gray-700'
               };
               
-              const renderRateCard = (rate: MedicareChildRate, status: 'Planned' | 'Active' | 'Ended') => (
+              const renderRateCard = (rate: MedicareChildRate, status: 'Pending' | 'Active' | 'Ended') => (
                 <div
                   key={rate.id}
                   className={`glass-card rounded-xl p-4 border ${statusColors[status]}`}
@@ -855,14 +866,14 @@ export default function ViewMedicarePlanPage() {
               
               return (
                 <div className="space-y-4">
-                  {/* Planned Rates Section */}
-                  {sortedPlannedRates.length > 0 && (
+                  {/* Pending Rates Section */}
+                  {sortedPendingRates.length > 0 && (
                     <div>
                       <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
-                        Planned
+                        Pending
                       </h5>
                       <div className="space-y-3">
-                        {sortedPlannedRates.map(rate => renderRateCard(rate, 'Planned'))}
+                        {sortedPendingRates.map(rate => renderRateCard(rate, 'Pending'))}
                       </div>
                     </div>
                   )}

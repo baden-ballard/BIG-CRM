@@ -114,7 +114,6 @@ export default function ActivePlansReportPage() {
       const transformedPlans: ActivePlan[] = activePlans.map((plan: any) => ({
         id: plan.id,
         plan_name: plan.plan_name,
-        company_name: plan.company_name || null,
         group_id: plan.group_id,
         group_name: groupMap.get(plan.group_id) || 'Unknown Group',
         program_id: plan.program_id,
@@ -139,6 +138,17 @@ export default function ActivePlansReportPage() {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
+    // Parse date-only strings (YYYY-MM-DD) as local dates to avoid timezone shifts
+    const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      return localDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    }
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -271,5 +281,6 @@ export default function ActivePlansReportPage() {
     </div>
   );
 }
+
 
 

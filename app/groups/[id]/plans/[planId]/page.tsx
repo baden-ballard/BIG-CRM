@@ -490,11 +490,8 @@ export default function ViewGroupPlanPage() {
         end_date: editRateFormData.end_date.trim() || null,
       };
 
-      if (editRateFormData.employer_contribution_type.trim()) {
-        updateData.employer_contribution_type = editRateFormData.employer_contribution_type;
-      } else {
-        updateData.employer_contribution_type = null;
-      }
+      // Always save the contribution type from the form
+      updateData.employer_contribution_type = editRateFormData.employer_contribution_type.trim() || null;
 
       // Employer contribution values (for Age Banded plans)
       if (editRateFormData.employer_employee_contribution_value.trim()) {
@@ -524,30 +521,24 @@ export default function ViewGroupPlanPage() {
         updateData.employer_child_contribution_value = null;
       }
 
-      // Class contribution amounts
-      if (editRateFormData.class_1_contribution_amount.trim()) {
-        const value = parseFloat(editRateFormData.class_1_contribution_amount);
-        if (!isNaN(value)) {
-          updateData.class_1_contribution_amount = value;
-        }
+      // Class contribution amounts - Always save the values from the form (use the exact values entered)
+      const class1Value = editRateFormData.class_1_contribution_amount.trim();
+      if (class1Value && !isNaN(parseFloat(class1Value))) {
+        updateData.class_1_contribution_amount = parseFloat(class1Value);
       } else {
         updateData.class_1_contribution_amount = null;
       }
 
-      if (editRateFormData.class_2_contribution_amount.trim()) {
-        const value = parseFloat(editRateFormData.class_2_contribution_amount);
-        if (!isNaN(value)) {
-          updateData.class_2_contribution_amount = value;
-        }
+      const class2Value = editRateFormData.class_2_contribution_amount.trim();
+      if (class2Value && !isNaN(parseFloat(class2Value))) {
+        updateData.class_2_contribution_amount = parseFloat(class2Value);
       } else {
         updateData.class_2_contribution_amount = null;
       }
 
-      if (editRateFormData.class_3_contribution_amount.trim()) {
-        const value = parseFloat(editRateFormData.class_3_contribution_amount);
-        if (!isNaN(value)) {
-          updateData.class_3_contribution_amount = value;
-        }
+      const class3Value = editRateFormData.class_3_contribution_amount.trim();
+      if (class3Value && !isNaN(parseFloat(class3Value))) {
+        updateData.class_3_contribution_amount = parseFloat(class3Value);
       } else {
         updateData.class_3_contribution_amount = null;
       }
@@ -787,13 +778,13 @@ export default function ViewGroupPlanPage() {
   };
 
   // Helper function to calculate rate status based on dates
-  const calculateRateStatus = (startDate: string, endDate: string | null): 'Planned' | 'Active' | 'Ended' => {
+  const calculateRateStatus = (startDate: string, endDate: string | null): 'Pending' | 'Active' | 'Ended' => {
     const today = new Date().toISOString().split('T')[0];
     const start = new Date(startDate).toISOString().split('T')[0];
     
-    // If start date is in the future, it's Planned
+    // If start date is in the future, it's Pending
     if (start > today) {
-      return 'Planned';
+      return 'Pending';
     }
     
     // If end date is null or in the future, it's Active
@@ -1890,7 +1881,7 @@ export default function ViewGroupPlanPage() {
                           )}
                         </div>
                         
-                        {/* Rate History Section - Organized by Planned, Active, Ended */}
+                        {/* Rate History Section - Organized by Pending, Active, Ended */}
                         <div className="pt-4 border-t border-white/20">
                           <h4 className="text-sm font-semibold text-[var(--glass-black-dark)] mb-3">
                             Rate History
@@ -1899,9 +1890,9 @@ export default function ViewGroupPlanPage() {
                             const allRates = opt.rateHistory || [];
                             
                             // Group rates by status
-                            const plannedRates = allRates.filter(rateRecord => {
+                            const pendingRates = allRates.filter(rateRecord => {
                               const status = calculateRateStatus(rateRecord.start_date, rateRecord.end_date);
-                              return status === 'Planned';
+                              return status === 'Pending';
                             });
                             
                             const activeRates = allRates.filter(rateRecord => {
@@ -1914,8 +1905,8 @@ export default function ViewGroupPlanPage() {
                               return status === 'Ended';
                             });
                             
-                            // Sort each group: Planned and Active by start_date descending (newest first), Ended by start_date descending (most recent ended first)
-                            const sortedPlannedRates = [...plannedRates].sort((a, b) => 
+                            // Sort each group: Pending and Active by start_date descending (newest first), Ended by start_date descending (most recent ended first)
+                            const sortedPendingRates = [...pendingRates].sort((a, b) => 
                               new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
                             );
                             
@@ -1927,13 +1918,13 @@ export default function ViewGroupPlanPage() {
                               new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
                             );
                             
-                            const statusColors: Record<'Planned' | 'Active' | 'Ended', string> = {
-                              Planned: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
+                            const statusColors: Record<'Pending' | 'Active' | 'Ended', string> = {
+                              Pending: 'bg-blue-500/10 border-blue-500/20 text-blue-700',
                               Active: 'bg-green-500/10 border-green-500/20 text-green-700',
                               Ended: 'bg-gray-500/10 border-gray-500/20 text-gray-700'
                             };
                             
-                            const renderRateCard = (rateRecord: any, status: 'Planned' | 'Active' | 'Ended') => (
+                            const renderRateCard = (rateRecord: any, status: 'Pending' | 'Active' | 'Ended') => (
                               <div
                                 key={rateRecord.id}
                                 className={`glass-card rounded-lg p-3 border ${statusColors[status]} cursor-pointer hover:opacity-80 transition-all`}
@@ -1957,7 +1948,7 @@ export default function ViewGroupPlanPage() {
                                   <div>
                                     <span className="font-semibold">Status: </span>
                                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                      status === 'Planned' ? 'bg-blue-500/20 text-blue-700' :
+                                      status === 'Pending' ? 'bg-blue-500/20 text-blue-700' :
                                       status === 'Active' ? 'bg-green-500/20 text-green-700' :
                                       'bg-gray-500/20 text-gray-700'
                                     }`}>
@@ -1966,11 +1957,21 @@ export default function ViewGroupPlanPage() {
                                   </div>
                                   <div>
                                     <span className="font-semibold">Rate Date Start: </span>
-                                    <span>{new Date(rateRecord.start_date).toLocaleDateString()}</span>
+                                    <span>{(() => {
+                                      const dateOnlyMatch = rateRecord.start_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                                      return dateOnlyMatch 
+                                        ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                                        : new Date(rateRecord.start_date).toLocaleDateString();
+                                    })()}</span>
                                   </div>
                                   <div>
                                     <span className="font-semibold">Rate End Date: </span>
-                                    <span>{rateRecord.end_date ? new Date(rateRecord.end_date).toLocaleDateString() : 'Ongoing'}</span>
+                                    <span>{rateRecord.end_date ? (() => {
+                                      const dateOnlyMatch = rateRecord.end_date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                                      return dateOnlyMatch 
+                                        ? new Date(parseInt(dateOnlyMatch[1]), parseInt(dateOnlyMatch[2]) - 1, parseInt(dateOnlyMatch[3])).toLocaleDateString()
+                                        : new Date(rateRecord.end_date).toLocaleDateString();
+                                    })() : 'Ongoing'}</span>
                                   </div>
                                   <div>
                                     <span className="font-semibold">Contribution Type: </span>
@@ -1982,20 +1983,26 @@ export default function ViewGroupPlanPage() {
                                   <span>${rateRecord.rate.toFixed(2)}</span>
                                   {rateRecord.class_1_contribution_amount !== null && (
                                     <span className="ml-4">
-                                      <span className="font-semibold">Class 1: </span>
-                                      <span>${rateRecord.class_1_contribution_amount.toFixed(2)}</span>
+                                      <span className="font-semibold">Class 1 Contribution Amount: </span>
+                                      <span>{rateRecord.employer_contribution_type === 'Percentage' 
+                                        ? `${rateRecord.class_1_contribution_amount.toFixed(2)}%`
+                                        : `$${rateRecord.class_1_contribution_amount.toFixed(2)}`}</span>
                                     </span>
                                   )}
                                   {rateRecord.class_2_contribution_amount !== null && (
                                     <span className="ml-4">
-                                      <span className="font-semibold">Class 2: </span>
-                                      <span>${rateRecord.class_2_contribution_amount.toFixed(2)}</span>
+                                      <span className="font-semibold">Class 2 Contribution Amount: </span>
+                                      <span>{rateRecord.employer_contribution_type === 'Percentage' 
+                                        ? `${rateRecord.class_2_contribution_amount.toFixed(2)}%`
+                                        : `$${rateRecord.class_2_contribution_amount.toFixed(2)}`}</span>
                                     </span>
                                   )}
                                   {rateRecord.class_3_contribution_amount !== null && (
                                     <span className="ml-4">
-                                      <span className="font-semibold">Class 3: </span>
-                                      <span>${rateRecord.class_3_contribution_amount.toFixed(2)}</span>
+                                      <span className="font-semibold">Class 3 Contribution Amount: </span>
+                                      <span>{rateRecord.employer_contribution_type === 'Percentage' 
+                                        ? `${rateRecord.class_3_contribution_amount.toFixed(2)}%`
+                                        : `$${rateRecord.class_3_contribution_amount.toFixed(2)}`}</span>
                                     </span>
                                   )}
                                 </div>
@@ -2010,14 +2017,14 @@ export default function ViewGroupPlanPage() {
                             
                             return (
                               <div className="space-y-4">
-                                {/* Planned Rates Section */}
-                                {sortedPlannedRates.length > 0 && (
+                                {/* Pending Rates Section */}
+                                {sortedPendingRates.length > 0 && (
                                   <div>
                                     <h5 className="text-xs font-semibold text-[var(--glass-gray-medium)] mb-2 uppercase tracking-wide">
-                                      Planned
+                                      Pending
                                     </h5>
                                     <div className="space-y-3">
-                                      {sortedPlannedRates.map(rateRecord => renderRateCard(rateRecord, 'Planned'))}
+                                      {sortedPendingRates.map(rateRecord => renderRateCard(rateRecord, 'Pending'))}
                                     </div>
                                   </div>
                                 )}

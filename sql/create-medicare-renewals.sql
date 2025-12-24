@@ -62,6 +62,8 @@ DECLARE
     v_medicare_plan RECORD;
     v_medicare_child_rate_id UUID;
     v_participant RECORD;
+    v_existing_record_id UUID;
+    v_existing_end_date DATE;
 BEGIN
     -- Get renewal details
     SELECT mr.id, mr.renewal_date
@@ -113,6 +115,7 @@ BEGIN
         -- A participant is considered active if:
         -- 1. They have a participant_medicare_plans record for this plan
         -- 2. The participant is not terminated (termination_date is NULL or >= renewal_date)
+        -- We will attach all active participants to the ONE active rate found above (v_medicare_child_rate_id)
         FOR v_participant_plan IN
             SELECT 
                 pmp.id,
@@ -133,18 +136,63 @@ BEGIN
             WHERE participant_medicare_plan_id = v_participant_plan.id
                 AND end_date IS NULL;
             
-            -- Create new participant_medicare_plan_rates record
-            INSERT INTO participant_medicare_plan_rates (
-                participant_medicare_plan_id,
-                medicare_child_rate_id,
-                start_date,
-                end_date
-            ) VALUES (
-                v_participant_plan.id,
-                v_medicare_child_rate_id,
-                v_renewal_date,
-                NULL
-            );
+            -- Check if a rate record already exists for this renewal date
+            -- This prevents creating duplicate records if the renewal is run multiple times
+            SELECT id, end_date
+            INTO v_existing_record_id, v_existing_end_date
+            FROM participant_medicare_plan_rates
+            WHERE participant_medicare_plan_id = v_participant_plan.id
+                AND medicare_child_rate_id = v_medicare_child_rate_id
+                AND start_date = v_renewal_date;
+            
+            -- Only create a new record if one doesn't already exist for this renewal date
+            IF v_existing_record_id IS NULL THEN
+                -- Create new participant_medicare_plan_rates record
+                BEGIN
+                    INSERT INTO participant_medicare_plan_rates (
+                        participant_medicare_plan_id,
+                        medicare_child_rate_id,
+                        start_date,
+                        end_date
+                    ) VALUES (
+                        v_participant_plan.id,
+                        v_medicare_child_rate_id,
+                        v_renewal_date,
+                        NULL
+                    );
+                EXCEPTION
+                    WHEN unique_violation THEN
+                        -- A record with this exact rate already exists
+                        -- Check if it's closed - if so, reactivate it; if active, update it
+                        SELECT id, end_date
+                        INTO v_existing_record_id, v_existing_end_date
+                        FROM participant_medicare_plan_rates
+                        WHERE participant_medicare_plan_id = v_participant_plan.id
+                            AND medicare_child_rate_id = v_medicare_child_rate_id
+                        LIMIT 1;
+                        
+                        IF v_existing_end_date IS NULL THEN
+                            -- Active record exists - update it
+                            UPDATE participant_medicare_plan_rates
+                            SET 
+                                start_date = v_renewal_date,
+                                end_date = NULL
+                            WHERE id = v_existing_record_id;
+                        ELSE
+                            -- Closed record exists - reactivate it for the renewal
+                            UPDATE participant_medicare_plan_rates
+                            SET 
+                                start_date = v_renewal_date,
+                                end_date = NULL
+                            WHERE id = v_existing_record_id;
+                        END IF;
+                END;
+            ELSE
+                -- Rate record already exists for this renewal date - update it instead of creating duplicate
+                UPDATE participant_medicare_plan_rates
+                SET end_date = NULL
+                WHERE id = v_existing_record_id;
+            END IF;
             
             -- Update the participant_medicare_plans record to connect to the new rate
             UPDATE participant_medicare_plans

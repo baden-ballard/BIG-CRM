@@ -674,6 +674,10 @@ function NewParticipantPageContent() {
                                     day: 'numeric'
                                   });
                                 }
+                                const dobMatch = dependent.dob.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                                if (dobMatch) {
+                                  return new Date(parseInt(dobMatch[1]), parseInt(dobMatch[2]) - 1, parseInt(dobMatch[3])).toLocaleDateString();
+                                }
                                 return new Date(dependent.dob).toLocaleDateString();
                               })()}
                             </span>
