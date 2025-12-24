@@ -235,7 +235,7 @@ export default function GroupsDownloadReportPage() {
 
           reportRows.push({
             group_id: participant.group_id || '',
-            group_name: participant.group?.name || 'Unknown Group',
+            group_name: (Array.isArray(participant.group) ? participant.group[0]?.name : participant.group?.name) || 'Unknown Group',
             participant_id: participant.id,
             participant_name: participant.client_name || 'Unknown',
             class_number: participant.class_number,
