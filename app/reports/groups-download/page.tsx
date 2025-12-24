@@ -233,9 +233,19 @@ export default function GroupsDownloadReportPage() {
             .map((plan: any) => plan.group_plan_option?.option)
             .filter(Boolean);
 
+          // Extract group name, handling both array and object types
+          let groupName = 'Unknown Group';
+          if (participant.group) {
+            if (Array.isArray(participant.group) && participant.group.length > 0) {
+              groupName = participant.group[0]?.name || 'Unknown Group';
+            } else if (!Array.isArray(participant.group) && (participant.group as any).name) {
+              groupName = (participant.group as any).name;
+            }
+          }
+
           reportRows.push({
             group_id: participant.group_id || '',
-            group_name: (Array.isArray(participant.group) ? participant.group[0]?.name : participant.group?.name) || 'Unknown Group',
+            group_name: groupName,
             participant_id: participant.id,
             participant_name: participant.client_name || 'Unknown',
             class_number: participant.class_number,
