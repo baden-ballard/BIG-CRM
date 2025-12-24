@@ -157,17 +157,17 @@ export default function ParticipantGroupPlanRatesPage() {
     if (planType === 'Age Banded') {
       if (!rateRecord.participant_group_plan?.dependent) {
         // Employee
-        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value;
+        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value ?? null;
       } else if (dependentRelationship === 'Spouse') {
         // Spouse
-        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_spouse_contribution_value;
+        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_spouse_contribution_value ?? null;
       } else if (dependentRelationship === 'Child') {
         // Child
-        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_child_contribution_value;
+        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_child_contribution_value ?? null;
       }
     } else {
       // For non-Age Banded plans, use the standard contribution value
-      contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value;
+      contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value ?? null;
     }
 
     // If we can't determine the contribution value from the plan, fall back to stored amount
