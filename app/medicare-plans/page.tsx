@@ -11,9 +11,7 @@ interface MedicarePlan {
   id: string;
   provider_id: string;
   plan_name: string;
-  effective_date: string | null;
-  termination_date: string | null;
-  plan_type: string | null;
+  plan_end_date: string | null;
   created_at: string;
   updated_at: string;
   provider_name?: string;
@@ -131,7 +129,9 @@ export default function MedicarePlansPage() {
   };
 
   const isPlanActive = (plan: MedicarePlan) => {
-    return !plan.termination_date || new Date(plan.termination_date) > new Date();
+    if (!plan.plan_end_date) return true; // No end date means active
+    const today = new Date().toISOString().split('T')[0];
+    return plan.plan_end_date >= today; // Active if end date is today or in the future
   };
 
   const toggleRenewalPlan = (planId: string) => {
@@ -437,7 +437,7 @@ export default function MedicarePlansPage() {
                       </span>
                     ) : (
                       <span className="px-2 py-1 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-700 ml-2">
-                        Terminated
+                        Ended
                       </span>
                     )}
                   </div>
@@ -448,27 +448,11 @@ export default function MedicarePlansPage() {
                         {plan.provider_name || 'N/A'}
                       </span>
                     </div>
-                    {plan.plan_type && (
+                    {plan.plan_end_date && (
                       <div>
-                        <span className="text-[var(--glass-gray-medium)]">Plan Type: </span>
+                        <span className="text-[var(--glass-gray-medium)]">End Date: </span>
                         <span className="text-[var(--glass-black-dark)] font-medium">
-                          {plan.plan_type}
-                        </span>
-                      </div>
-                    )}
-                    {plan.effective_date && (
-                      <div>
-                        <span className="text-[var(--glass-gray-medium)]">Effective: </span>
-                        <span className="text-[var(--glass-black-dark)] font-medium">
-                          {formatDate(plan.effective_date)}
-                        </span>
-                      </div>
-                    )}
-                    {plan.termination_date && (
-                      <div>
-                        <span className="text-[var(--glass-gray-medium)]">Terminated: </span>
-                        <span className="text-[var(--glass-black-dark)] font-medium">
-                          {formatDate(plan.termination_date)}
+                          {formatDate(plan.plan_end_date)}
                         </span>
                       </div>
                     )}

@@ -10,6 +10,7 @@ interface MedicarePlan {
   id: string;
   provider_id: string;
   plan_name: string;
+  plan_end_date: string | null;
   created_at: string;
   updated_at: string;
   provider_name?: string;
@@ -56,6 +57,7 @@ export default function ViewMedicarePlanPage() {
   const [formData, setFormData] = useState({
     plan_name: '',
     provider_id: '',
+    plan_end_date: '',
   });
   const [loading, setLoading] = useState(true);
   const [loadingRates, setLoadingRates] = useState(true);
@@ -146,6 +148,7 @@ export default function ViewMedicarePlanPage() {
       setFormData({
         plan_name: planData.plan_name || '',
         provider_id: planData.provider_id || '',
+        plan_end_date: formatDateForInput(planData.plan_end_date),
       });
     } catch (err: any) {
       console.error('Error fetching plan:', {
@@ -308,8 +311,10 @@ export default function ViewMedicarePlanPage() {
   };
 
   const isPlanActive = () => {
-    // Plan is always considered active (no termination date field)
-    return true;
+    if (!plan) return false;
+    if (!plan.plan_end_date) return true; // No end date means active
+    const today = new Date().toISOString().split('T')[0];
+    return plan.plan_end_date >= today; // Active if end date is today or in the future
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -333,6 +338,7 @@ export default function ViewMedicarePlanPage() {
       const updateData: any = {
         plan_name: formData.plan_name,
         provider_id: formData.provider_id || null,
+        plan_end_date: formData.plan_end_date || null,
       };
 
       // Update plan in database (only if in edit mode)
@@ -382,6 +388,7 @@ export default function ViewMedicarePlanPage() {
       setFormData({
         plan_name: plan.plan_name || '',
         provider_id: plan.provider_id || '',
+        plan_end_date: formatDateForInput(plan.plan_end_date),
       });
     }
     // Clear editing rate
@@ -602,8 +609,12 @@ export default function ViewMedicarePlanPage() {
               View and edit Medicare plan details
             </p>
           </div>
-          <span className="px-4 py-2 rounded-full text-sm font-semibold bg-green-500/20 text-green-700">
-            Active
+          <span className={`px-4 py-2 rounded-full text-sm font-semibold ${
+            isPlanActive() 
+              ? 'bg-green-500/20 text-green-700' 
+              : 'bg-gray-500/20 text-gray-700'
+          }`}>
+            {isPlanActive() ? 'Active' : 'Ended'}
           </span>
         </div>
       </div>
@@ -685,6 +696,27 @@ export default function ViewMedicarePlanPage() {
                     ))}
                   </select>
                 )}
+              </div>
+            </div>
+
+            {/* Row 2: Plan End Date */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label htmlFor="plan_end_date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Plan End Date
+                </label>
+                <input
+                  type="date"
+                  id="plan_end_date"
+                  name="plan_end_date"
+                  value={formData.plan_end_date}
+                  onChange={handleChange}
+                  disabled={!isEditMode}
+                  className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${!isEditMode ? 'opacity-75 cursor-not-allowed' : ''}`}
+                />
+                <p className="text-xs text-[var(--glass-gray-medium)] mt-1">
+                  Leave empty if the plan is currently active
+                </p>
               </div>
             </div>
 

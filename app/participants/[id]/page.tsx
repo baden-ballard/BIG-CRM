@@ -691,7 +691,14 @@ export default function ParticipantDetailPage() {
             employer_contribution_amount,
             group_option_rate:group_option_rates (
               id,
-              rate
+              rate,
+              employer_contribution_type,
+              employer_employee_contribution_value,
+              employer_spouse_contribution_value,
+              employer_child_contribution_value,
+              class_1_contribution_amount,
+              class_2_contribution_amount,
+              class_3_contribution_amount
             )
           `)
           .eq('participant_group_plan_id', plan.id)
@@ -706,10 +713,31 @@ export default function ParticipantDetailPage() {
           const groupOptionRate = Array.isArray(rateData.group_option_rate) 
             ? rateData.group_option_rate[0] 
             : rateData.group_option_rate;
-          plan.group_option_rate = groupOptionRate as { id: string; rate: number } | null;
+          plan.group_option_rate = groupOptionRate as any;
           // Store contribution info if needed
           (plan as any).contribution_type = rateData.employer_contribution_type;
           (plan as any).contribution_amount = rateData.employer_contribution_amount;
+        } else if (plan.group_option_rate_id) {
+          // Fallback: If no rate history, fetch directly from group_option_rates using the plan's group_option_rate_id
+          const { data: rateData, error: directRateError } = await supabase
+            .from('group_option_rates')
+            .select(`
+              id,
+              rate,
+              employer_contribution_type,
+              employer_employee_contribution_value,
+              employer_spouse_contribution_value,
+              employer_child_contribution_value,
+              class_1_contribution_amount,
+              class_2_contribution_amount,
+              class_3_contribution_amount
+            `)
+            .eq('id', plan.group_option_rate_id)
+            .single();
+          
+          if (!directRateError && rateData) {
+            plan.group_option_rate = rateData as any;
+          }
         }
 
         return plan;
@@ -3804,17 +3832,67 @@ export default function ParticipantDetailPage() {
                       : plan.group_option_rate?.rate || null;
 
                     // Calculate amount paid by employer
+                    // For Composite plans, use class_1_contribution_amount from group_option_rate
+                    // For other plans, use employer_contribution_value from group_plan
                     let amountPaidByEmployer = 0;
-                    if (plan.group_plan?.employer_contribution_type && plan.group_plan?.employer_contribution_value && rate !== null) {
-                      if (plan.group_plan.employer_contribution_type === 'Percentage') {
-                        amountPaidByEmployer = rate * (plan.group_plan.employer_contribution_value / 100);
-                      } else if (plan.group_plan.employer_contribution_type === 'Dollar Amount') {
-                        amountPaidByEmployer = plan.group_plan.employer_contribution_value;
+                    const planType = plan.group_plan?.plan_type;
+                    
+                    // #region agent log
+                    const calcLogStart = {
+                      planId: plan.id,
+                      planType,
+                      rate,
+                      hasGroupOptionRate: !!plan.group_option_rate,
+                      groupOptionRateContributionType: plan.group_option_rate?.employer_contribution_type,
+                      class1Contribution: plan.group_option_rate?.class_1_contribution_amount,
+                      groupPlanContributionType: plan.group_plan?.employer_contribution_type,
+                      groupPlanContributionValue: plan.group_plan?.employer_contribution_value,
+                    };
+                    console.log('[DEBUG] participant page - calculating employee amount:', calcLogStart);
+                    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/page.tsx:3800',message:'calculating employee amount start',data:calcLogStart,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'K,L,M'})}).catch(()=>{});
+                    // #endregion
+                    
+                    if (rate !== null) {
+                      if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount !== null) {
+                        // Composite plan: use class_1_contribution_amount from group_option_rate
+                        const contributionType = plan.group_option_rate.employer_contribution_type;
+                        const contributionValue = plan.group_option_rate.class_1_contribution_amount;
+                        if (contributionType === 'Percentage') {
+                          amountPaidByEmployer = rate * (contributionValue / 100);
+                        } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                          amountPaidByEmployer = contributionValue;
+                        }
+                        // #region agent log
+                        console.log('[DEBUG] participant page - Composite calculation:', {contributionType, contributionValue, amountPaidByEmployer});
+                        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/page.tsx:3815',message:'Composite calculation',data:{contributionType, contributionValue, amountPaidByEmployer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'K'})}).catch(()=>{});
+                        // #endregion
+                      } else if (plan.group_plan?.employer_contribution_type && plan.group_plan?.employer_contribution_value) {
+                        // Other plans: use employer_contribution_value from group_plan
+                        if (plan.group_plan.employer_contribution_type === 'Percentage') {
+                          amountPaidByEmployer = rate * (plan.group_plan.employer_contribution_value / 100);
+                        } else if (plan.group_plan.employer_contribution_type === 'Dollar Amount') {
+                          amountPaidByEmployer = plan.group_plan.employer_contribution_value;
+                        }
+                        // #region agent log
+                        console.log('[DEBUG] participant page - non-Composite calculation:', {contributionType: plan.group_plan.employer_contribution_type, contributionValue: plan.group_plan.employer_contribution_value, amountPaidByEmployer});
+                        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/page.tsx:3825',message:'non-Composite calculation',data:{contributionType: plan.group_plan.employer_contribution_type, contributionValue: plan.group_plan.employer_contribution_value, amountPaidByEmployer},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'L'})}).catch(()=>{});
+                        // #endregion
                       }
                     }
 
                     // Calculate employee responsible amount
                     const employeeResponsibleAmount = rate !== null ? Math.max(0, rate - amountPaidByEmployer) : null;
+                    
+                    // #region agent log
+                    const calcLogEnd = {
+                      employeeResponsibleAmount,
+                      amountPaidByEmployer,
+                      rate,
+                      willRender: employeeResponsibleAmount !== null,
+                    };
+                    console.log('[DEBUG] participant page - final calculation result:', calcLogEnd);
+                    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/page.tsx:3830',message:'final calculation result',data:calcLogEnd,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'K,L,M'})}).catch(()=>{});
+                    // #endregion
 
                     const handlePlanClick = () => {
                       // Only navigate if not in edit mode
@@ -3841,9 +3919,25 @@ export default function ParticipantDetailPage() {
                             </h4>
                           </div>
                           <div className="flex items-center gap-3">
+                            {/* #region agent log */}
+                            {(() => {
+                              const conditionResult = employeeResponsibleAmount !== null;
+                              const renderLog = {employeeResponsibleAmount, conditionResult, willRender: conditionResult};
+                              console.log('[DEBUG] participant page - rendering condition:', renderLog);
+                              fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/page.tsx:3894',message:'rendering condition',data:renderLog,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'M'})}).catch(()=>{});
+                              return null;
+                            })()}
+                            {/* #endregion */}
                             {employeeResponsibleAmount !== null && (
-                              <div className="text-right">
-                                <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Employee Responsible Amount</p>
+                              <div className="text-right flex-shrink-0">
+                                {/* #region agent log */}
+                                {(() => {
+                                  console.log('[DEBUG] participant page - actually rendering employee responsible div', {employeeResponsibleAmount});
+                                  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/page.tsx:3932',message:'rendering div',data:{employeeResponsibleAmount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'M'})}).catch(()=>{});
+                                  return null;
+                                })()}
+                                {/* #endregion */}
+                                <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Employee Responsible</p>
                                 <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
                                   ${employeeResponsibleAmount.toFixed(2)}
                                 </p>
@@ -3908,12 +4002,28 @@ export default function ParticipantDetailPage() {
                       : plan.group_option_rate?.rate || null;
 
                     // Calculate amount paid by employer
+                    // For Composite plans, use class_1_contribution_amount from group_option_rate
+                    // For other plans, use employer_contribution_value from group_plan
                     let amountPaidByEmployer = 0;
-                    if (plan.group_plan?.employer_contribution_type && plan.group_plan?.employer_contribution_value && rate !== null) {
-                      if (plan.group_plan.employer_contribution_type === 'Percentage') {
-                        amountPaidByEmployer = rate * (plan.group_plan.employer_contribution_value / 100);
-                      } else if (plan.group_plan.employer_contribution_type === 'Dollar Amount') {
-                        amountPaidByEmployer = plan.group_plan.employer_contribution_value;
+                    const planType = plan.group_plan?.plan_type;
+                    
+                    if (rate !== null) {
+                      if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount !== null) {
+                        // Composite plan: use class_1_contribution_amount from group_option_rate
+                        const contributionType = plan.group_option_rate.employer_contribution_type;
+                        const contributionValue = plan.group_option_rate.class_1_contribution_amount;
+                        if (contributionType === 'Percentage') {
+                          amountPaidByEmployer = rate * (contributionValue / 100);
+                        } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                          amountPaidByEmployer = contributionValue;
+                        }
+                      } else if (plan.group_plan?.employer_contribution_type && plan.group_plan?.employer_contribution_value) {
+                        // Other plans: use employer_contribution_value from group_plan
+                        if (plan.group_plan.employer_contribution_type === 'Percentage') {
+                          amountPaidByEmployer = rate * (plan.group_plan.employer_contribution_value / 100);
+                        } else if (plan.group_plan.employer_contribution_type === 'Dollar Amount') {
+                          amountPaidByEmployer = plan.group_plan.employer_contribution_value;
+                        }
                       }
                     }
 

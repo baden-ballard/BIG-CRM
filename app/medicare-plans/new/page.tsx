@@ -16,6 +16,7 @@ export default function NewMedicarePlanPage() {
   const [formData, setFormData] = useState({
     provider_id: '',
     plan_name: '',
+    plan_end_date: '',
   });
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -66,6 +67,7 @@ export default function NewMedicarePlanPage() {
       const insertData: any = {
         provider_id: formData.provider_id,
         plan_name: formData.plan_name,
+        plan_end_date: formData.plan_end_date || null,
       };
 
       // Insert Medicare plan into database
@@ -166,6 +168,27 @@ export default function NewMedicarePlanPage() {
                   className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                   placeholder="Enter plan name"
                 />
+              </div>
+            </div>
+
+            {/* Row 2: Plan End Date */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label htmlFor="plan_end_date" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  Plan End Date
+                </label>
+                <input
+                  type="date"
+                  id="plan_end_date"
+                  name="plan_end_date"
+                  value={formData.plan_end_date}
+                  onChange={handleChange}
+                  className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
+                  placeholder="Leave empty if plan is active"
+                />
+                <p className="text-xs text-[var(--glass-gray-medium)] mt-1">
+                  Leave empty if the plan is currently active
+                </p>
               </div>
             </div>
 

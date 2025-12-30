@@ -663,14 +663,41 @@ export default function ViewGroupPlanPage() {
       const rateValue = parseFloat(editedRate);
       const startDate = editedRateStartDate || formData.effective_date || new Date().toISOString().split('T')[0];
       
+      const rateData: any = {
+        group_plan_option_id: optionId,
+        rate: rateValue,
+        start_date: startDate,
+        end_date: null,
+      };
+
+      // Add contribution fields if they exist (for Composite plans)
+      if (formData.plan_type === 'Composite') {
+        if (editedEmployerContributionType && editedEmployerContributionType.trim() !== '') {
+          rateData.employer_contribution_type = editedEmployerContributionType.trim();
+        }
+        if (editedClass1ContributionAmount && editedClass1ContributionAmount.trim() !== '') {
+          const class1Value = parseFloat(editedClass1ContributionAmount);
+          if (!isNaN(class1Value)) {
+            rateData.class_1_contribution_amount = class1Value;
+          }
+        }
+        if (numberOfClasses >= 2 && editedClass2ContributionAmount && editedClass2ContributionAmount.trim() !== '') {
+          const class2Value = parseFloat(editedClass2ContributionAmount);
+          if (!isNaN(class2Value)) {
+            rateData.class_2_contribution_amount = class2Value;
+          }
+        }
+        if (numberOfClasses >= 3 && editedClass3ContributionAmount && editedClass3ContributionAmount.trim() !== '') {
+          const class3Value = parseFloat(editedClass3ContributionAmount);
+          if (!isNaN(class3Value)) {
+            rateData.class_3_contribution_amount = class3Value;
+          }
+        }
+      }
+      
       const { error: rateError } = await supabase
         .from('group_option_rates')
-        .insert({
-          group_plan_option_id: optionId,
-          rate: rateValue,
-          start_date: startDate,
-          end_date: null,
-        });
+        .insert(rateData);
 
       if (rateError) {
         throw rateError;
@@ -832,7 +859,14 @@ export default function ViewGroupPlanPage() {
     return rate;
   };
 
-  const parseFile = async (file: File): Promise<Array<{ option: string; rate: number }>> => {
+  const parseFile = async (file: File): Promise<Array<{ 
+    option: string; 
+    rate: number;
+    employer_contribution_type?: string;
+    class_1_contribution_amount?: number;
+    class_2_contribution_amount?: number;
+    class_3_contribution_amount?: number;
+  }>> => {
     const fileName = file.name.toLowerCase();
     const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
 
@@ -857,6 +891,18 @@ export default function ViewGroupPlanPage() {
       const header = (jsonData[0] || []).map((h: any) => String(h).trim().toLowerCase());
       const optionIndex = header.findIndex((h: string) => h === 'age' || h === 'option');
       const rateIndex = header.findIndex((h: string) => h === 'rate' || h === 'price');
+      const employerContributionTypeIndex = header.findIndex((h: string) => 
+        h === 'employer contribution type' || h === 'employer contribution' || h === 'contribution type'
+      );
+      const class1Index = header.findIndex((h: string) => 
+        h === 'class 1 contribution amount' || h === 'class 1' || h === 'class1 contribution amount'
+      );
+      const class2Index = header.findIndex((h: string) => 
+        h === 'class 2 contribution amount' || h === 'class 2' || h === 'class2 contribution amount'
+      );
+      const class3Index = header.findIndex((h: string) => 
+        h === 'class 3 contribution amount' || h === 'class 3' || h === 'class3 contribution amount'
+      );
 
       if (optionIndex === -1) {
         throw new Error('Excel file must contain an "Age" or "Option" column');
@@ -866,7 +912,14 @@ export default function ViewGroupPlanPage() {
       }
 
       // Parse data rows
-      const data: Array<{ option: string; rate: number }> = [];
+      const data: Array<{ 
+        option: string; 
+        rate: number;
+        employer_contribution_type?: string;
+        class_1_contribution_amount?: number;
+        class_2_contribution_amount?: number;
+        class_3_contribution_amount?: number;
+      }> = [];
       for (let i = 1; i < jsonData.length; i++) {
         const row = jsonData[i] || [];
         const option = String(row[optionIndex] || '').trim();
@@ -878,7 +931,39 @@ export default function ViewGroupPlanPage() {
 
         try {
           const rate = parseRateValue(rateValue);
-          data.push({ option, rate });
+          const rowData: {
+            option: string;
+            rate: number;
+            employer_contribution_type?: string;
+            class_1_contribution_amount?: number;
+            class_2_contribution_amount?: number;
+            class_3_contribution_amount?: number;
+          } = { option, rate };
+
+          // Parse optional fields if they exist
+          if (employerContributionTypeIndex !== -1 && row[employerContributionTypeIndex]) {
+            rowData.employer_contribution_type = String(row[employerContributionTypeIndex]).trim();
+          }
+          if (class1Index !== -1 && row[class1Index] !== undefined && row[class1Index] !== null && row[class1Index] !== '') {
+            const class1Value = parseRateValue(row[class1Index]);
+            if (!isNaN(class1Value)) {
+              rowData.class_1_contribution_amount = class1Value;
+            }
+          }
+          if (class2Index !== -1 && row[class2Index] !== undefined && row[class2Index] !== null && row[class2Index] !== '') {
+            const class2Value = parseRateValue(row[class2Index]);
+            if (!isNaN(class2Value)) {
+              rowData.class_2_contribution_amount = class2Value;
+            }
+          }
+          if (class3Index !== -1 && row[class3Index] !== undefined && row[class3Index] !== null && row[class3Index] !== '') {
+            const class3Value = parseRateValue(row[class3Index]);
+            if (!isNaN(class3Value)) {
+              rowData.class_3_contribution_amount = class3Value;
+            }
+          }
+
+          data.push(rowData);
         } catch (err: any) {
           throw new Error(`Invalid rate value "${rateValue}" in row ${i + 1}: ${err.message}`);
         }
@@ -893,10 +978,54 @@ export default function ViewGroupPlanPage() {
         throw new Error('CSV file is empty');
       }
 
-      // Parse header row
-      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      // Parse header row - handle quoted headers
+      const parseCSVLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          
+          if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              // Escaped quote
+              current += '"';
+              i++; // Skip next quote
+            } else {
+              // Toggle quote state
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            // End of field
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        
+        // Add last field
+        result.push(current.trim());
+        
+        return result;
+      };
+
+      const header = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
       const optionIndex = header.findIndex(h => h === 'age' || h === 'option');
       const rateIndex = header.findIndex(h => h === 'rate' || h === 'price');
+      const employerContributionTypeIndex = header.findIndex((h: string) => 
+        h === 'employer contribution type' || h === 'employer contribution' || h === 'contribution type'
+      );
+      const class1Index = header.findIndex((h: string) => 
+        h === 'class 1 contribution amount' || h === 'class 1' || h === 'class1 contribution amount'
+      );
+      const class2Index = header.findIndex((h: string) => 
+        h === 'class 2 contribution amount' || h === 'class 2' || h === 'class2 contribution amount'
+      );
+      const class3Index = header.findIndex((h: string) => 
+        h === 'class 3 contribution amount' || h === 'class 3' || h === 'class3 contribution amount'
+      );
 
       if (optionIndex === -1) {
         throw new Error('CSV must contain an "Age" or "Option" column');
@@ -906,9 +1035,16 @@ export default function ViewGroupPlanPage() {
       }
 
       // Parse data rows
-      const data: Array<{ option: string; rate: number }> = [];
+      const data: Array<{ 
+        option: string; 
+        rate: number;
+        employer_contribution_type?: string;
+        class_1_contribution_amount?: number;
+        class_2_contribution_amount?: number;
+        class_3_contribution_amount?: number;
+      }> = [];
       for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
+        const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, '').trim());
         const option = values[optionIndex];
         const rateStr = values[rateIndex];
 
@@ -918,7 +1054,39 @@ export default function ViewGroupPlanPage() {
 
         try {
           const rate = parseRateValue(rateStr);
-          data.push({ option, rate });
+          const rowData: {
+            option: string;
+            rate: number;
+            employer_contribution_type?: string;
+            class_1_contribution_amount?: number;
+            class_2_contribution_amount?: number;
+            class_3_contribution_amount?: number;
+          } = { option, rate };
+
+          // Parse optional fields if they exist
+          if (employerContributionTypeIndex !== -1 && values[employerContributionTypeIndex]) {
+            rowData.employer_contribution_type = values[employerContributionTypeIndex].trim();
+          }
+          if (class1Index !== -1 && values[class1Index] && values[class1Index] !== '') {
+            const class1Value = parseRateValue(values[class1Index]);
+            if (!isNaN(class1Value)) {
+              rowData.class_1_contribution_amount = class1Value;
+            }
+          }
+          if (class2Index !== -1 && values[class2Index] && values[class2Index] !== '') {
+            const class2Value = parseRateValue(values[class2Index]);
+            if (!isNaN(class2Value)) {
+              rowData.class_2_contribution_amount = class2Value;
+            }
+          }
+          if (class3Index !== -1 && values[class3Index] && values[class3Index] !== '') {
+            const class3Value = parseRateValue(values[class3Index]);
+            if (!isNaN(class3Value)) {
+              rowData.class_3_contribution_amount = class3Value;
+            }
+          }
+
+          data.push(rowData);
         } catch (err: any) {
           throw new Error(`Invalid rate value "${rateStr}" in row ${i + 1}: ${err.message}`);
         }
@@ -957,10 +1125,10 @@ export default function ViewGroupPlanPage() {
           option: row.option,
           rate: row.rate.toString(),
           rate_start_date: defaultStartDate,
-          employer_contribution_type: '',
-          class_1_contribution_amount: '',
-          class_2_contribution_amount: '',
-          class_3_contribution_amount: '',
+          employer_contribution_type: row.employer_contribution_type || '',
+          class_1_contribution_amount: row.class_1_contribution_amount?.toString() || '',
+          class_2_contribution_amount: row.class_2_contribution_amount?.toString() || '',
+          class_3_contribution_amount: row.class_3_contribution_amount?.toString() || '',
         }));
 
       if (newOptionsFromFile.length === 0) {
@@ -1159,12 +1327,37 @@ export default function ViewGroupPlanPage() {
                 const originalOpt = validOptions[index];
                 if (originalOpt.rate && !isNaN(parseFloat(originalOpt.rate))) {
                   const startDate = originalOpt.rate_start_date || formData.effective_date || new Date().toISOString().split('T')[0];
-                  return {
+                  const rateData: any = {
                     group_plan_option_id: insertedOpt.id,
                     rate: parseFloat(originalOpt.rate),
                     start_date: startDate,
                     end_date: null,
                   };
+
+                  // Add contribution fields if they exist
+                  if (originalOpt.employer_contribution_type && originalOpt.employer_contribution_type.trim() !== '') {
+                    rateData.employer_contribution_type = originalOpt.employer_contribution_type.trim();
+                  }
+                  if (originalOpt.class_1_contribution_amount && originalOpt.class_1_contribution_amount.trim() !== '') {
+                    const class1Value = parseFloat(originalOpt.class_1_contribution_amount);
+                    if (!isNaN(class1Value)) {
+                      rateData.class_1_contribution_amount = class1Value;
+                    }
+                  }
+                  if (originalOpt.class_2_contribution_amount && originalOpt.class_2_contribution_amount.trim() !== '') {
+                    const class2Value = parseFloat(originalOpt.class_2_contribution_amount);
+                    if (!isNaN(class2Value)) {
+                      rateData.class_2_contribution_amount = class2Value;
+                    }
+                  }
+                  if (originalOpt.class_3_contribution_amount && originalOpt.class_3_contribution_amount.trim() !== '') {
+                    const class3Value = parseFloat(originalOpt.class_3_contribution_amount);
+                    if (!isNaN(class3Value)) {
+                      rateData.class_3_contribution_amount = class3Value;
+                    }
+                  }
+
+                  return rateData;
                 }
                 return null;
               })
@@ -2110,7 +2303,8 @@ export default function ViewGroupPlanPage() {
                   File (CSV or Excel) *
                 </label>
                 <p className="text-xs text-[var(--glass-gray-medium)] mb-2">
-                  Format: Option, Rate (or Price)
+                  Required columns: Option (or Age), Rate (or Price)<br/>
+                  Optional columns: Employer Contribution Type, Class 1 Contribution Amount, Class 2 Contribution Amount, Class 3 Contribution Amount
                 </p>
                 <input
                   type="file"

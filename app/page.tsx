@@ -23,15 +23,23 @@ interface ParticipantWithUpcomingBirthday extends Participant {
   daysUntil: number;
 }
 
+interface ParticipantTurning65 extends Participant {
+  turning65Date: Date;
+  daysUntil65: number;
+}
+
 
 export default function Dashboard() {
   const router = useRouter();
   const [recentBirthdays, setRecentBirthdays] = useState<ParticipantWithBirthday[]>([]);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState<ParticipantWithUpcomingBirthday[]>([]);
+  const [turning65Participants, setTurning65Participants] = useState<ParticipantTurning65[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingUpcoming, setLoadingUpcoming] = useState(true);
+  const [loadingTurning65, setLoadingTurning65] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorUpcoming, setErrorUpcoming] = useState<string | null>(null);
+  const [errorTurning65, setErrorTurning65] = useState<string | null>(null);
   const [totalGroups, setTotalGroups] = useState<number>(0);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
   const [activePrograms, setActivePrograms] = useState<number>(0);
@@ -41,6 +49,7 @@ export default function Dashboard() {
     fetchRecentBirthdays();
     fetchUpcomingBirthdays();
     fetchDashboardStats();
+    fetchGroupParticipantsTurning65();
   }, []);
 
   const fetchRecentBirthdays = async () => {
@@ -243,6 +252,96 @@ export default function Dashboard() {
     return `In ${daysUntil} days`;
   };
 
+  const fetchGroupParticipantsTurning65 = async () => {
+    try {
+      setLoadingTurning65(true);
+      setErrorTurning65(null);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const ninetyDaysFromNow = new Date(today);
+      ninetyDaysFromNow.setDate(today.getDate() + 90);
+
+      // First, get all participants with active Medicare plans
+      const { data: medicarePlans, error: medicareError } = await supabase
+        .from('participant_medicare_plans')
+        .select('participant_id, effective_date');
+
+      if (medicareError) {
+        throw medicareError;
+      }
+
+      const participantsWithActiveMedicarePlans = new Set<string>();
+      (medicarePlans || []).forEach((plan: any) => {
+        if (plan.participant_id) {
+          if (plan.effective_date) {
+            const effectiveDate = new Date(plan.effective_date);
+            effectiveDate.setHours(0, 0, 0, 0);
+            
+            // If effective_date is today or in the past, consider it active
+            if (effectiveDate <= today) {
+              participantsWithActiveMedicarePlans.add(plan.participant_id);
+            }
+          } else {
+            // If no effective_date, consider it active (legacy data)
+            participantsWithActiveMedicarePlans.add(plan.participant_id);
+          }
+        }
+      });
+
+      // Fetch group participants (where group_id is not null) with DOB
+      const { data, error: fetchError } = await supabase
+        .from('participants')
+        .select('id, client_name, dob, email_address, phone_number, group_id')
+        .not('dob', 'is', null)
+        .not('group_id', 'is', null);
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      const participants = (data || []) as Participant[];
+      
+      // Filter participants who don't have active Medicare plans and calculate their 65th birthday
+      const turning65ParticipantsList: ParticipantTurning65[] = [];
+
+      participants.forEach((participant) => {
+        // Skip if participant has an active Medicare plan
+        if (participantsWithActiveMedicarePlans.has(participant.id)) {
+          return;
+        }
+
+        if (!participant.dob) return;
+
+        const dob = new Date(participant.dob);
+        
+        // Calculate 65th birthday
+        const turning65Date = new Date(dob.getFullYear() + 65, dob.getMonth(), dob.getDate());
+        turning65Date.setHours(0, 0, 0, 0);
+
+        // Check if 65th birthday is within the next 90 days (including today)
+        if (turning65Date >= today && turning65Date <= ninetyDaysFromNow) {
+          const daysUntil65 = Math.floor((turning65Date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          turning65ParticipantsList.push({
+            ...participant,
+            turning65Date,
+            daysUntil65,
+          });
+        }
+      });
+
+      // Sort by soonest 65th birthday first
+      turning65ParticipantsList.sort((a, b) => a.turning65Date.getTime() - b.turning65Date.getTime());
+
+      setTurning65Participants(turning65ParticipantsList);
+    } catch (err: any) {
+      console.error('Error fetching group participants turning 65:', err);
+      setErrorTurning65(err.message || 'Failed to load group participants turning 65');
+    } finally {
+      setLoadingTurning65(false);
+    }
+  };
+
   const fetchDashboardStats = async () => {
     try {
       setLoadingStats(true);
@@ -306,28 +405,36 @@ export default function Dashboard() {
         }
       });
 
-      // Get participants with Medicare plans (assuming all Medicare plans are active)
+      // Get participants with active Medicare plans
+      // A plan is active if effective_date is today or in the past (or null for legacy data)
       const { data: medicarePlans, error: medicareError } = await supabase
         .from('participant_medicare_plans')
-        .select('participant_id');
+        .select('participant_id, effective_date');
 
       if (medicareError) {
         throw medicareError;
       }
 
-      const participantsWithMedicarePlans = new Set<string>();
+      const participantsWithActiveMedicarePlans = new Set<string>();
       (medicarePlans || []).forEach((plan: any) => {
         if (plan.participant_id) {
-          participantsWithMedicarePlans.add(plan.participant_id);
+          if (plan.effective_date) {
+            const effectiveDate = new Date(plan.effective_date);
+            effectiveDate.setHours(0, 0, 0, 0);
+            
+            // If effective_date is today or in the past, consider it active
+            if (effectiveDate <= today) {
+              participantsWithActiveMedicarePlans.add(plan.participant_id);
+            }
+          } else {
+            // If no effective_date, consider it active (legacy data)
+            participantsWithActiveMedicarePlans.add(plan.participant_id);
+          }
         }
       });
 
-      // Combine both sets to get total unique participants with active plans
-      const allParticipantsWithPlans = new Set([
-        ...Array.from(participantsWithActiveGroupPlans),
-        ...Array.from(participantsWithMedicarePlans)
-      ]);
-      setTotalParticipants(allParticipantsWithPlans.size);
+      // Set total to only count participants with active Medicare plans
+      setTotalParticipants(participantsWithActiveMedicarePlans.size);
 
       // 3. Active Programs - count all program_ids from active group plans (not distinct)
       // This counts programs per group, so if Group A has 3 programs with active plans, that's 3
@@ -377,7 +484,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-[var(--glass-gray-medium)] mb-1">
-                Total Participants
+                Total Medicare Clients
               </p>
               <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
                 {loadingStats ? '...' : totalParticipants}
@@ -464,7 +571,7 @@ export default function Dashboard() {
       </GlassCard>
 
       {/* Upcoming Medicare Birthdays */}
-      <GlassCard>
+      <GlassCard className="mb-8">
         <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
           Upcoming Medicare Birthdays (Next 60 Days)
         </h2>
@@ -506,6 +613,69 @@ export default function Dashboard() {
                       </span>
                       <span className="text-[var(--glass-black-dark)] font-medium">
                         {getDaysUntilText(participant.daysUntil)}
+                      </span>
+                      {participant.email_address && (
+                        <span>
+                          Email: <span className="text-[var(--glass-black-dark)]">{participant.email_address}</span>
+                        </span>
+                      )}
+                      {participant.phone_number && (
+                        <span>
+                          Phone: <span className="text-[var(--glass-black-dark)]">{participant.phone_number}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Group Participants Turning 65 */}
+      <GlassCard>
+        <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
+          Group Participants Turning 65 (Next 90 Days)
+        </h2>
+        
+        {loadingTurning65 && (
+          <p className="text-[var(--glass-gray-medium)] py-4">
+            Loading group participants turning 65...
+          </p>
+        )}
+
+        {errorTurning65 && (
+          <p className="text-red-500 py-4">
+            Error: {errorTurning65}
+          </p>
+        )}
+
+        {!loadingTurning65 && !errorTurning65 && turning65Participants.length === 0 && (
+          <p className="text-[var(--glass-gray-medium)] py-4">
+            No group participants are turning 65 in the next 90 days without an active Medicare plan.
+          </p>
+        )}
+
+        {!loadingTurning65 && !errorTurning65 && turning65Participants.length > 0 && (
+          <div className="space-y-4">
+            {turning65Participants.map((participant) => (
+              <div
+                key={participant.id}
+                className="p-4 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 transition-all cursor-pointer"
+                onClick={() => router.push(`/participants/${participant.id}`)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-1">
+                      {participant.client_name}
+                    </h3>
+                    <div className="flex flex-wrap gap-4 text-sm text-[var(--glass-gray-medium)]">
+                      <span>
+                        Turning 65: <span className="text-[var(--glass-black-dark)]">{formatDate(participant.turning65Date)}</span>
+                      </span>
+                      <span className="text-[var(--glass-black-dark)] font-medium">
+                        {getDaysUntilText(participant.daysUntil65)}
                       </span>
                       {participant.email_address && (
                         <span>

@@ -82,6 +82,13 @@ interface RateHistoryRecord {
     rate: number;
     start_date: string | null;
     end_date: string | null;
+    employer_contribution_type?: string | null;
+    employer_employee_contribution_value?: number | null;
+    employer_spouse_contribution_value?: number | null;
+    employer_child_contribution_value?: number | null;
+    class_1_contribution_amount?: number | null;
+    class_2_contribution_amount?: number | null;
+    class_3_contribution_amount?: number | null;
   } | null;
   rate_override: number | null;
   plan_option_id: string | null;
@@ -317,7 +324,14 @@ export default function ParticipantPlanDetailPage() {
             id,
             rate,
             start_date,
-            end_date
+            end_date,
+            employer_contribution_type,
+            employer_employee_contribution_value,
+            employer_spouse_contribution_value,
+            employer_child_contribution_value,
+            class_1_contribution_amount,
+            class_2_contribution_amount,
+            class_3_contribution_amount
           )
         `)
         .in('participant_group_plan_id', participantPlanIds)
@@ -503,7 +517,7 @@ export default function ParticipantPlanDetailPage() {
         const planOptionId = participantPlan?.group_plan_option_id || null;
         const planOptionName = planOptionId ? planOptionsMap.get(planOptionId) || null : null;
         
-        return {
+        const mappedRecord = {
           id: record.id,
           created_at: record.created_at,
           participant_group_plan_id: record.participant_group_plan_id,
@@ -519,6 +533,8 @@ export default function ParticipantPlanDetailPage() {
           plan_option_id: planOptionId,
           plan_option_name: planOptionName,
         };
+        
+        return mappedRecord;
       });
 
       setRateHistory(rateHistory as RateHistoryRecord[]);
@@ -1139,20 +1155,20 @@ export default function ParticipantPlanDetailPage() {
   // Priority: Active rates > Pending rates > Most recent ended rates
   // All plans use employee responsible amount to avoid double-counting
   const calculateTotalEmployeeResponsibleAmount = () => {
-    if (currentPlan.group_plan?.plan_type !== 'Age Banded') {
-      // For non-Age Banded plans, only return employee amount if the rate is actually active
-      // If there's no active rate (only pending or ended), return 0
-      if (!isCurrentRateActive) {
-        return 0;
-      }
-      return currentEmployeeAmount;
-    }
-
+    // #region agent log
+    const entryData = {rateHistoryLength:rateHistory.length,allPlansLength:allPlans.length,planType:currentPlan.group_plan?.plan_type};
+    console.log('[DEBUG] calculateTotalEmployeeResponsibleAmount entry:', entryData);
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1157',message:'calculateTotalEmployeeResponsibleAmount entry',data:entryData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
+    // For ALL plan types, calculate from rate history records (active, pending, or most recent ended)
+    // This ensures we use the historical contribution values from participant_group_plan_rates
     let total = 0;
-
-    // Use rateHistory if available, otherwise fall back to allPlans
+    
     if (rateHistory.length > 0) {
-      // For Age Banded plans, get the best available rate for each plan (employee + all dependents)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1162',message:'using rateHistory path',data:{rateHistoryLength:rateHistory.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      // Get the best available rate for each plan (employee + all dependents)
       // Priority: Active > Pending > Most recent Ended
       const latestRates = new Map<string, { record: RateHistoryRecord; status: 'Active' | 'Pending' | 'Ended'; priority: number }>();
       
@@ -1186,12 +1202,8 @@ export default function ParticipantPlanDetailPage() {
           // If existing has better priority, keep it
         }
       });
-
-      // Process each rate - IMPORTANT: This includes ALL plans (employee + all dependents)
-      // For Age Banded plans, we sum employee responsible amounts for:
-      // - Employee plan (participant with no dependent_id)
-      // - Spouse plan(s) (participant with dependent_id where relationship = 'Spouse')
-      // - Child plan(s) (participant with dependent_id where relationship = 'Child')
+      
+      // Process each rate - calculate employee responsible amount from rate records
       latestRates.forEach(({ record }, planId) => {
         // Get the rate
         const rate = record.rate_override !== null
@@ -1200,19 +1212,87 @@ export default function ParticipantPlanDetailPage() {
 
         if (rate === 0) return;
 
-        // Find the plan to get contribution info
-        const plan = allPlans.find(p => p.id === planId) || currentPlan;
-
-        // Calculate employee responsible amount for this plan (employee, spouse, or child)
-        // Each plan's employee amount is calculated separately and then summed
-        const employeeAmount = calculateEmployeeResponsibleAmount(rate, plan);
+        // Calculate employee responsible amount from the rate record (same logic as renderRateRecord)
+        // Priority 1: Use stored employer_contribution_amount from participant_group_plan_rates
+        // Priority 2: Calculate from group_option_rate contribution values
+        // Priority 3: Fallback to calculating from plan's contribution values
+        let employeeAmount: number | null = null;
+        let amountPaidByEmployer: number | null = null;
+        
+        const contributionAmount = record.employer_contribution_amount;
+        
+        // Priority 1: Use stored contribution amount from the rate record
+        if (contributionAmount !== null && contributionAmount !== undefined) {
+          amountPaidByEmployer = contributionAmount;
+        } else {
+          // Priority 2: Calculate from group_option_rate contribution values
+          const groupOptionRate = record.group_option_rate;
+          if (groupOptionRate?.employer_contribution_type) {
+            const contributionType = groupOptionRate.employer_contribution_type;
+            let contributionValue: number | null = null;
+            
+            // Find the matching plan to get plan type
+            const matchingPlan = allPlans.find(p => p.id === planId) || currentPlan;
+            const planType = matchingPlan?.group_plan?.plan_type;
+            
+            // Get the appropriate contribution value based on plan type and relationship
+            if (planType === 'Age Banded') {
+              if (!record.dependent_id) {
+                // Employee
+                contributionValue = groupOptionRate.employer_employee_contribution_value ?? null;
+              } else if (record.dependent_relationship === 'Spouse') {
+                // Spouse
+                contributionValue = groupOptionRate.employer_spouse_contribution_value ?? null;
+              } else if (record.dependent_relationship === 'Child') {
+                // Child
+                contributionValue = groupOptionRate.employer_child_contribution_value ?? null;
+              }
+            } else if (planType === 'Composite') {
+              // For Composite plans, use class contribution amounts
+              contributionValue = groupOptionRate.class_1_contribution_amount ?? null;
+            } else {
+              // For other plans, use employee contribution value
+              contributionValue = groupOptionRate.employer_employee_contribution_value ?? null;
+            }
+            
+            // Calculate the dollar amount if we have the rate and contribution info
+            if (contributionType && contributionValue !== null && rate) {
+              if (contributionType === 'Percentage') {
+                amountPaidByEmployer = rate * (contributionValue / 100);
+              } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                amountPaidByEmployer = contributionValue;
+              }
+            }
+          }
+          
+          // Priority 3: Fallback to calculating from plan's contribution values
+          if (amountPaidByEmployer === null) {
+            const plan = allPlans.find(p => p.id === planId) || currentPlan;
+            employeeAmount = calculateEmployeeResponsibleAmount(rate, plan);
+            if (employeeAmount !== null) {
+              total += employeeAmount;
+              return; // Skip to next iteration
+            }
+          }
+        }
+        
+        // Calculate employee responsible amount
+        if (amountPaidByEmployer !== null && amountPaidByEmployer !== undefined) {
+          employeeAmount = Math.max(0, rate - amountPaidByEmployer);
+        }
+        
         if (employeeAmount !== null) {
           total += employeeAmount;
         }
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1279',message:'after rateHistory processing',data:{total,latestRatesSize:latestRates.size},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
     } else if (allPlans.length > 0) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1280',message:'using allPlans fallback path',data:{allPlansLength:allPlans.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       // Fallback: use allPlans if rateHistory isn't loaded yet
-      // IMPORTANT: For Age Banded plans, sum employee responsible amounts
       // Priority: Active > Pending > Most recent Ended
       const today = new Date().toISOString().split('T')[0];
       
@@ -1238,44 +1318,49 @@ export default function ParticipantPlanDetailPage() {
           : plan.group_option_rate?.rate || 0;
         
         if (planRate > 0) {
-          const employeeAmount = calculateEmployeeResponsibleAmount(planRate, plan);
+          // For Composite plans, use class_1_contribution_amount from group_option_rate if available
+          let employeeAmount: number | null = null;
+          const planType = plan.group_plan?.plan_type;
+          
+          if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount !== null) {
+            // Calculate from group_option_rate for Composite plans
+            const contributionType = plan.group_option_rate.employer_contribution_type;
+            const contributionValue = plan.group_option_rate.class_1_contribution_amount;
+            let amountPaidByEmployer: number | null = null;
+            
+            if (contributionType && contributionValue !== null && planRate) {
+              if (contributionType === 'Percentage') {
+                amountPaidByEmployer = planRate * (contributionValue / 100);
+              } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                amountPaidByEmployer = contributionValue;
+              }
+            }
+            
+            if (amountPaidByEmployer !== null && amountPaidByEmployer !== undefined) {
+              employeeAmount = Math.max(0, planRate - amountPaidByEmployer);
+            }
+          } else {
+            // For other plans, use the standard calculation
+            employeeAmount = calculateEmployeeResponsibleAmount(planRate, plan);
+          }
+          
           if (employeeAmount !== null) {
             total += employeeAmount;
           }
         }
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1312',message:'after allPlans processing',data:{total},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     }
-
-    // Debug: Log what we're calculating
-    if (typeof window !== 'undefined') {
-      console.log('CALCULATION DEBUG (Age Banded Total):', {
-        total,
-        rateHistoryLength: rateHistory.length,
-        allPlansLength: allPlans.length,
-        employeePlan: allPlans.find(p => !p.dependent_id),
-        dependents: allPlans.filter(p => p.dependent_id !== null).map(p => ({
-          id: p.id,
-          dependent_id: p.dependent_id,
-          relationship: p.dependent?.relationship,
-          rate: p.rate_override || p.group_option_rate?.rate,
-          employeeAmount: calculateEmployeeResponsibleAmount(
-            p.rate_override || p.group_option_rate?.rate || 0,
-            p
-          )
-        })),
-        breakdown: allPlans.map(p => ({
-          type: p.dependent_id ? (p.dependent?.relationship || 'Unknown') : 'Employee',
-          rate: p.rate_override || p.group_option_rate?.rate || 0,
-          employeeAmount: calculateEmployeeResponsibleAmount(
-            p.rate_override || p.group_option_rate?.rate || 0,
-            p
-          )
-        }))
-      });
-    }
-
-    // For Age Banded plans, always return a number (even if 0) so the card is always shown
-    return total;
+    
+    // #region agent log
+    const finalResult = total > 0 ? total : null;
+    const exitData = {total,finalResult,isNull:finalResult === null};
+    console.log('[DEBUG] calculateTotalEmployeeResponsibleAmount exit:', exitData);
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1315',message:'calculateTotalEmployeeResponsibleAmount exit',data:exitData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
+    return finalResult;
   };
 
   // Function to calculate and store total Employee Responsible Amount
@@ -1335,7 +1420,15 @@ export default function ParticipantPlanDetailPage() {
   };
 
   // Calculate and display the total directly - don't use any stored values
-  const totalEmployeeResponsibleAmount = calculateTotalEmployeeResponsibleAmount();
+  // #region agent log
+  const totalEmployeeResponsibleAmount = (() => {
+    const result = calculateTotalEmployeeResponsibleAmount();
+    const logData = {result,isNull:result === null,rateHistoryLength:rateHistory.length,allPlansLength:allPlans.length,planType:currentPlan.group_plan?.plan_type};
+    console.log('[DEBUG] calculateTotalEmployeeResponsibleAmount result:', logData);
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1375',message:'calculateTotalEmployeeResponsibleAmount result',data:logData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B,C'})}).catch(()=>{});
+    return result;
+  })();
+  // #endregion
 
   // Helper function to render rate section
   const renderRateSection = (title: string, plans: ParticipantPlan[], contributionValue: number | null, contributionType: string | null) => {
@@ -1433,15 +1526,130 @@ export default function ParticipantPlanDetailPage() {
               ? plan.rate_override 
               : plan.group_option_rate?.rate || null;
             
-            let amountPaidByEmployer = 0;
-            if (contributionType && contributionValue && planRate !== null) {
-              if (contributionType === 'Percentage') {
-                amountPaidByEmployer = planRate * (contributionValue / 100);
-              } else if (contributionType === 'Dollar Amount') {
-                amountPaidByEmployer = contributionValue;
+            // #region agent log
+            const logDataStart = {
+              planId: plan.id,
+              planRate,
+              planType: plan.group_plan?.plan_type,
+              rateHistoryLength: rateHistory.length,
+              hasGroupOptionRate: !!plan.group_option_rate,
+              groupOptionRateContributionType: plan.group_option_rate?.employer_contribution_type,
+              class1Contribution: plan.group_option_rate?.class_1_contribution_amount,
+            };
+            console.log('[DEBUG] renderRateSection - calculating for plan:', logDataStart);
+            fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1525',message:'renderRateSection plan calculation start',data:logDataStart,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E,F'})}).catch(()=>{});
+            // #endregion
+            
+            // Calculate employee responsible amount using the same priority logic as renderRateRecord
+            // Priority 1: Use stored employer_contribution_amount from rateHistory if available
+            // Priority 2: Calculate from group_option_rate contribution values
+            // Priority 3: Fallback to calculating from plan's contribution values
+            let employeeResponsibleAmount: number | null = null;
+            let amountPaidByEmployer: number | null = null;
+            let calculationPath = 'none';
+            
+            if (planRate !== null && planRate > 0) {
+              // Try to get from rateHistory first
+              const planRateRecord = rateHistory.find(r => r.participant_group_plan_id === plan.id);
+              
+              // #region agent log
+              const rateRecordLog = {
+                foundRateRecord: !!planRateRecord,
+                rateRecordContributionAmount: planRateRecord?.employer_contribution_amount,
+              };
+              console.log('[DEBUG] renderRateSection - rateHistory check:', rateRecordLog);
+              fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1538',message:'renderRateSection rateHistory check',data:rateRecordLog,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+              // #endregion
+              
+              if (planRateRecord?.employer_contribution_amount !== null && planRateRecord?.employer_contribution_amount !== undefined) {
+                // Priority 1: Use stored contribution amount
+                amountPaidByEmployer = planRateRecord.employer_contribution_amount;
+                calculationPath = 'priority1-rateHistory';
+              } else if (plan.group_option_rate?.employer_contribution_type) {
+                // Priority 2: Calculate from group_option_rate
+                const gorContributionType = plan.group_option_rate.employer_contribution_type;
+                let gorContributionValue: number | null = null;
+                const planType = plan.group_plan?.plan_type;
+                
+                if (planType === 'Age Banded') {
+                  if (!plan.dependent_id) {
+                    gorContributionValue = plan.group_option_rate.employer_employee_contribution_value ?? null;
+                  } else if (plan.dependent?.relationship === 'Spouse') {
+                    gorContributionValue = plan.group_option_rate.employer_spouse_contribution_value ?? null;
+                  } else if (plan.dependent?.relationship === 'Child') {
+                    gorContributionValue = plan.group_option_rate.employer_child_contribution_value ?? null;
+                  }
+                } else if (planType === 'Composite') {
+                  gorContributionValue = plan.group_option_rate.class_1_contribution_amount ?? null;
+                } else {
+                  gorContributionValue = plan.group_option_rate.employer_employee_contribution_value ?? null;
+                }
+                
+                // #region agent log
+                const gorLog = {
+                  gorContributionType,
+                  gorContributionValue,
+                  planType,
+                  willCalculate: !!(gorContributionType && gorContributionValue !== null && planRate),
+                };
+                console.log('[DEBUG] renderRateSection - group_option_rate calculation:', gorLog);
+                fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1544',message:'renderRateSection group_option_rate calculation',data:gorLog,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
+                
+                if (gorContributionType && gorContributionValue !== null && planRate) {
+                  if (gorContributionType === 'Percentage') {
+                    amountPaidByEmployer = planRate * (gorContributionValue / 100);
+                  } else if (gorContributionType === 'Dollar Amount' || gorContributionType === 'Dollar') {
+                    amountPaidByEmployer = gorContributionValue;
+                  }
+                  calculationPath = 'priority2-groupOptionRate';
+                }
+              }
+              
+              // Priority 3: Fallback to plan's contribution values
+              if (amountPaidByEmployer === null) {
+                const calculatedAmount = calculateEmployeeResponsibleAmount(planRate, plan);
+                // #region agent log
+                const fallbackLog = {
+                  calculatedAmount,
+                  planContributionType: plan.group_plan?.employer_contribution_type,
+                  planContributionValue: plan.group_plan?.employer_contribution_value,
+                };
+                console.log('[DEBUG] renderRateSection - fallback calculation:', fallbackLog);
+                fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1573',message:'renderRateSection fallback calculation',data:fallbackLog,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                // #endregion
+                if (calculatedAmount !== null) {
+                  employeeResponsibleAmount = calculatedAmount;
+                  calculationPath = 'priority3-fallback';
+                }
+              } else {
+                // Calculate employee responsible amount from employer contribution
+                employeeResponsibleAmount = Math.max(0, planRate - amountPaidByEmployer);
+                calculationPath = calculationPath + '-calculated';
               }
             }
-            const employeeResponsibleAmount = Math.max(0, (planRate || 0) - amountPaidByEmployer);
+            
+            // #region agent log
+            const finalLog = {
+              employeeResponsibleAmount,
+              amountPaidByEmployer,
+              calculationPath,
+              willRender: employeeResponsibleAmount !== null,
+            };
+            console.log('[DEBUG] renderRateSection - final calculation result:', finalLog);
+            fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1582',message:'renderRateSection final calculation result',data:finalLog,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E,F'})}).catch(()=>{});
+            // #endregion
+            
+            // Also calculate for display in the grid below (using simpler logic for backward compatibility)
+            let amountPaidByEmployerForGrid = 0;
+            if (contributionType && contributionValue && planRate !== null) {
+              if (contributionType === 'Percentage') {
+                amountPaidByEmployerForGrid = planRate * (contributionValue / 100);
+              } else if (contributionType === 'Dollar Amount') {
+                amountPaidByEmployerForGrid = contributionValue;
+              }
+            }
+            const employeeResponsibleAmountForGrid = Math.max(0, (planRate || 0) - amountPaidByEmployerForGrid);
 
             return (
               <div
@@ -1464,11 +1672,31 @@ export default function ParticipantPlanDetailPage() {
                       </p>
                     )}
                   </div>
-                  {isAgeBanded && totalEmployeeResponsibleAmount !== null && (
-                    <div className="text-right">
-                      <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Total All Plans</p>
+                  {/* #region agent log */}
+                  {(() => {
+                    const conditionResult = employeeResponsibleAmount !== null;
+                    const renderLog = {
+                      employeeResponsibleAmount,
+                      conditionResult,
+                      willRender: conditionResult,
+                    };
+                    console.log('[DEBUG] renderRateSection - rendering condition check:', renderLog);
+                    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1616',message:'renderRateSection rendering condition',data:renderLog,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E,F'})}).catch(()=>{});
+                    return null;
+                  })()}
+                  {/* #endregion */}
+                  {employeeResponsibleAmount !== null && (
+                    <div className="text-right flex-shrink-0 ml-4">
+                      {/* #region agent log */}
+                      {(() => {
+                        console.log('[DEBUG] renderRateSection - actually rendering employee responsible amount div');
+                        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1623',message:'renderRateSection rendering div',data:{employeeResponsibleAmount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E,F'})}).catch(()=>{});
+                        return null;
+                      })()}
+                      {/* #endregion */}
+                      <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Employee Responsible</p>
                       <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
-                        ${totalEmployeeResponsibleAmount.toFixed(2)}
+                        ${employeeResponsibleAmount.toFixed(2)}
                       </p>
                     </div>
                   )}
@@ -1495,7 +1723,7 @@ export default function ParticipantPlanDetailPage() {
                         <div>
                           <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Employee Responsible</p>
                           <p className="text-xl font-bold text-[var(--glass-black-dark)]">
-                            ${employeeResponsibleAmount.toFixed(2)}
+                            ${employeeResponsibleAmountForGrid.toFixed(2)}
                           </p>
                         </div>
                       </>
@@ -1579,37 +1807,96 @@ export default function ParticipantPlanDetailPage() {
                 }}
                 className="glass-card rounded-xl p-4 bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors duration-200"
               >
-                <div className="flex flex-wrap items-center justify-center gap-4">
-                  {currentPlan.group_plan?.program && (
-                    <div>
-                      <span className="text-sm text-[var(--glass-gray-medium)]">Program: </span>
-                      <span className="text-[var(--glass-black-dark)] font-medium">
-                        {currentPlan.group_plan.program.name}
-                      </span>
-                    </div>
-                  )}
-                  {currentPlan.group_plan?.provider && (
-                    <div>
-                      <span className="text-sm text-[var(--glass-gray-medium)]">Provider: </span>
-                      <span className="text-[var(--glass-black-dark)] font-medium">
-                        {currentPlan.group_plan.provider.name}
-                      </span>
-                    </div>
-                  )}
-                  {currentPlan.group_plan?.effective_date && (
-                    <div>
-                      <span className="text-sm text-[var(--glass-gray-medium)]">Effective Date: </span>
-                      <span className="text-[var(--glass-black-dark)] font-medium">
-                        {formatDisplayDate(currentPlan.group_plan.effective_date)}
-                      </span>
-                    </div>
-                  )}
-                  {currentPlan.group_plan_option && (
-                    <div>
-                      <span className="text-sm text-[var(--glass-gray-medium)]">Plan Option: </span>
-                      <span className="text-[var(--glass-black-dark)] font-medium">
-                        {currentPlan.group_plan_option.option}
-                      </span>
+                {/* #region agent log */}
+                {(() => {
+                  const cardLogData = {
+                    totalEmployeeResponsibleAmount,
+                    isNull: totalEmployeeResponsibleAmount === null,
+                    isUndefined: totalEmployeeResponsibleAmount === undefined,
+                    planType: currentPlan.group_plan?.plan_type,
+                    rateHistoryLength: rateHistory.length,
+                    allPlansLength: allPlans.length,
+                    currentPlanId: currentPlan.id,
+                    currentPlanRate: currentPlan.rate_override !== null ? currentPlan.rate_override : currentPlan.group_option_rate?.rate,
+                    groupOptionRate: currentPlan.group_option_rate ? {
+                      rate: currentPlan.group_option_rate.rate,
+                      contributionType: currentPlan.group_option_rate.employer_contribution_type,
+                      class1Contribution: currentPlan.group_option_rate.class_1_contribution_amount,
+                    } : null,
+                  };
+                  console.log('[DEBUG] rendering main group plan card:', cardLogData);
+                  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1810',message:'rendering group plan card',data:cardLogData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G,H,I'})}).catch(()=>{});
+                  return null;
+                })()}
+                {/* #endregion */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-4 flex-1 min-w-0">
+                    {currentPlan.group_plan?.plan_type && (
+                      <div>
+                        <span className="text-sm text-[var(--glass-gray-medium)]">{currentPlan.group_plan.plan_type} Plan</span>
+                      </div>
+                    )}
+                    {currentPlan.group_plan?.program && (
+                      <div>
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Program: </span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {currentPlan.group_plan.program.name}
+                        </span>
+                      </div>
+                    )}
+                    {currentPlan.group_plan?.provider && (
+                      <div>
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Provider: </span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {currentPlan.group_plan.provider.name}
+                        </span>
+                      </div>
+                    )}
+                    {currentPlan.group_plan?.effective_date && (
+                      <div>
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Effective Date: </span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {formatDisplayDate(currentPlan.group_plan.effective_date)}
+                        </span>
+                      </div>
+                    )}
+                    {currentPlan.group_plan_option && (
+                      <div>
+                        <span className="text-sm text-[var(--glass-gray-medium)]">Plan Option: </span>
+                        <span className="text-[var(--glass-black-dark)] font-medium">
+                          {currentPlan.group_plan_option.option}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {/* #region agent log */}
+                  {(() => {
+                    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1655',message:'checking employee responsible amount condition',data:{totalEmployeeResponsibleAmount,conditionResult:totalEmployeeResponsibleAmount !== null,willRender:totalEmployeeResponsibleAmount !== null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
+                    return null;
+                  })()}
+                  {/* #endregion */}
+                  {/* #region agent log */}
+                  {(() => {
+                    const conditionResult = totalEmployeeResponsibleAmount !== null;
+                    const conditionData = {totalEmployeeResponsibleAmount,conditionResult,willRender:conditionResult};
+                    console.log('[DEBUG] rendering employee responsible amount condition:', conditionData);
+                    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1671',message:'rendering employee responsible amount condition',data:conditionData,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+                    return null;
+                  })()}
+                  {/* #endregion */}
+                  {totalEmployeeResponsibleAmount !== null && (
+                    <div className="text-right flex-shrink-0">
+                      {/* #region agent log */}
+                      {(() => {
+                        console.log('[DEBUG] actually rendering employee responsible amount div in DOM', {totalEmployeeResponsibleAmount});
+                        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'participants/[id]/plans/[planId]/page.tsx:1872',message:'rendering employee responsible amount div',data:{totalEmployeeResponsibleAmount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+                        return null;
+                      })()}
+                      {/* #endregion */}
+                      <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Employee Responsible</p>
+                      <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                        ${totalEmployeeResponsibleAmount.toFixed(2)}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1803,8 +2090,8 @@ export default function ParticipantPlanDetailPage() {
                     </div>
                   )}
 
-                  {/* Employee Responsible Amount Indicator - Always show for Age Banded plans */}
-                  {currentPlan.group_plan?.plan_type === 'Age Banded' && totalEmployeeResponsibleAmount !== null && (
+                  {/* Employee Responsible Amount Indicator - Show for Age Banded and Composite plans */}
+                  {(currentPlan.group_plan?.plan_type === 'Age Banded' || currentPlan.group_plan?.plan_type === 'Composite') && totalEmployeeResponsibleAmount !== null && (
                     <div className="glass-card rounded-xl p-6 bg-blue-500/10 border border-blue-500/20">
                       <div className="flex items-center justify-between">
                         <div>
@@ -1827,24 +2114,24 @@ export default function ParticipantPlanDetailPage() {
             </div>
           </div>
 
-          {/* Employee Rates Section */}
-          {currentPlan.group_plan?.employer_contribution_type === 'Age Banded' && renderRateSection(
+          {/* Employee Rates Section - Show for Age Banded and Composite plans */}
+          {(currentPlan.group_plan?.plan_type === 'Age Banded' || currentPlan.group_plan?.plan_type === 'Composite') && renderRateSection(
             'Employee',
             employeePlans,
             currentPlan.group_plan.employer_contribution_value,
             currentPlan.group_plan.employer_contribution_type
           )}
 
-          {/* Spouse Rates Section */}
-          {currentPlan.group_plan?.employer_contribution_type === 'Age Banded' && renderRateSection(
+          {/* Spouse Rates Section - Show for Age Banded plans only */}
+          {currentPlan.group_plan?.plan_type === 'Age Banded' && renderRateSection(
             'Spouse',
             spousePlans,
             currentPlan.group_plan.employer_spouse_contribution_value,
             currentPlan.group_plan.employer_contribution_type
           )}
 
-          {/* Child Rates Section */}
-          {currentPlan.group_plan?.employer_contribution_type === 'Age Banded' && renderRateSection(
+          {/* Child Rates Section - Show for Age Banded plans only */}
+          {currentPlan.group_plan?.plan_type === 'Age Banded' && renderRateSection(
             'Child',
             childPlans,
             currentPlan.group_plan.employer_child_contribution_value,
@@ -1941,12 +2228,6 @@ export default function ParticipantPlanDetailPage() {
                   ? record.rate_override 
                   : record.group_option_rate?.rate || null;
                 
-                // Find the matching plan for this record to get correct dependent relationship
-                const matchingPlan = allPlans.find(p => p.id === record.participant_group_plan_id) || currentPlan;
-                
-                // Always use calculateEmployeeResponsibleAmount to ensure correct calculation based on dependent relationship
-                // The stored employer_contribution_amount might be incorrect for dependents
-                const employeeAmount = calculateEmployeeResponsibleAmount(recordRate, matchingPlan);
                 const rateStatus = calculateRateStatus(
                   record.start_date || record.group_option_rate?.start_date || null,
                   record.end_date || record.group_option_rate?.end_date || null
@@ -1956,6 +2237,106 @@ export default function ParticipantPlanDetailPage() {
                 // This is the actual amount the employer contributed at the time this rate was active
                 const contributionAmount = record.employer_contribution_amount;
                 const contributionType = record.employer_contribution_type;
+                
+                // Calculate employee responsible amount from the stored values in the rate record
+                // Priority 1: Use stored employer_contribution_amount from participant_group_plan_rates
+                // Priority 2: Calculate from group_option_rate contribution values (source of truth for historical rates)
+                // Priority 3: Fallback to calculating from plan's contribution values
+                let employeeAmount: number | null = null;
+                
+                if (recordRate !== null) {
+                  let amountPaidByEmployer: number | null = null;
+                  
+                  // Priority 1: Use stored contribution amount from the rate record
+                  if (contributionAmount !== null && contributionAmount !== undefined) {
+                    amountPaidByEmployer = contributionAmount;
+                  } else {
+                    // Priority 2: Calculate from group_option_rate contribution values (like participant_group_plan_rates page)
+                    const groupOptionRate = record.group_option_rate;
+                    if (groupOptionRate?.employer_contribution_type) {
+                      const contributionType = groupOptionRate.employer_contribution_type;
+                      let contributionValue: number | null = null;
+                      
+                      // Find the matching plan to get plan type
+                      const matchingPlan = allPlans.find(p => p.id === record.participant_group_plan_id) || currentPlan;
+                      const planType = matchingPlan?.group_plan?.plan_type;
+                      
+                      // Get the appropriate contribution value based on plan type and relationship
+                      if (planType === 'Age Banded') {
+                        if (!record.dependent_id) {
+                          // Employee
+                          contributionValue = groupOptionRate.employer_employee_contribution_value ?? null;
+                        } else if (record.dependent_relationship === 'Spouse') {
+                          // Spouse
+                          contributionValue = groupOptionRate.employer_spouse_contribution_value ?? null;
+                        } else if (record.dependent_relationship === 'Child') {
+                          // Child
+                          contributionValue = groupOptionRate.employer_child_contribution_value ?? null;
+                        }
+                      } else if (planType === 'Composite') {
+                        // For Composite plans, use class contribution amounts
+                        contributionValue = groupOptionRate.class_1_contribution_amount ?? null;
+                      } else {
+                        // For other plans, use employee contribution value
+                        contributionValue = groupOptionRate.employer_employee_contribution_value ?? null;
+                      }
+                      
+                      // Calculate the dollar amount if we have the rate and contribution info
+                      if (contributionType && contributionValue !== null && groupOptionRate.rate) {
+                        const rate = groupOptionRate.rate;
+                        if (contributionType === 'Percentage') {
+                          amountPaidByEmployer = rate * (contributionValue / 100);
+                        } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                          amountPaidByEmployer = contributionValue;
+                        }
+                      }
+                    }
+                    
+                    // Priority 3: Fallback to calculating from plan's contribution values
+                    if (amountPaidByEmployer === null) {
+                      const matchingPlan = allPlans.find(p => p.id === record.participant_group_plan_id) || currentPlan;
+                      
+                      if (matchingPlan && matchingPlan.group_plan) {
+                        let contributionValue: number | null = null;
+                        const planContributionType = matchingPlan.group_plan.employer_contribution_type;
+                        
+                        // For Age Banded plans, use the appropriate contribution value based on dependent relationship from record
+                        if (matchingPlan.group_plan.plan_type === 'Age Banded') {
+                          if (!record.dependent_id) {
+                            // Employee
+                            contributionValue = matchingPlan.group_plan.employer_contribution_value;
+                          } else if (record.dependent_relationship === 'Spouse') {
+                            // Spouse
+                            contributionValue = matchingPlan.group_plan.employer_spouse_contribution_value;
+                          } else if (record.dependent_relationship === 'Child') {
+                            // Child
+                            contributionValue = matchingPlan.group_plan.employer_child_contribution_value;
+                          }
+                        } else {
+                          // For non-Age Banded plans, use the standard contribution value
+                          contributionValue = matchingPlan.group_plan.employer_contribution_value;
+                        }
+                        
+                        if (planContributionType && contributionValue !== null && contributionValue !== undefined) {
+                          if (planContributionType === 'Percentage') {
+                            amountPaidByEmployer = recordRate * (contributionValue / 100);
+                          } else if (planContributionType === 'Dollar Amount' || planContributionType === 'Dollar') {
+                            amountPaidByEmployer = contributionValue;
+                          }
+                        }
+                      } else {
+                        // If no plan found, try using calculateEmployeeResponsibleAmount as last resort
+                        const matchingPlan = allPlans.find(p => p.id === record.participant_group_plan_id) || currentPlan;
+                        employeeAmount = calculateEmployeeResponsibleAmount(recordRate, matchingPlan);
+                      }
+                    }
+                  }
+                  
+                  // Calculate employee responsible amount
+                  if (amountPaidByEmployer !== null && amountPaidByEmployer !== undefined) {
+                    employeeAmount = Math.max(0, recordRate - amountPaidByEmployer);
+                  }
+                }
 
                 const statusColors: Record<'Pending' | 'Active' | 'Ended', string> = {
                   Pending: 'bg-blue-500/10 border-blue-500/20',

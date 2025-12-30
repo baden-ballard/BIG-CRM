@@ -175,6 +175,15 @@ function normalizeDate(dateStr: string): string | null {
   
   const dateStrTrimmed = dateStr.trim();
   
+  // Helper function to convert 2-digit year to 4-digit year
+  const convertYear = (year: number): number => {
+    if (year < 100) {
+      // 2-digit year: if < 50, assume 20XX (2000-2049), else assume 19XX (1950-1999)
+      return year < 50 ? 2000 + year : 1900 + year;
+    }
+    return year;
+  };
+  
   // Try MM/DD/YYYY or DD/MM/YYYY
   if (dateStrTrimmed.includes('/')) {
     const parts = dateStrTrimmed.split('/').map(Number);
@@ -182,11 +191,13 @@ function normalizeDate(dateStr: string): string | null {
       if (parts[0] > 12) {
         // DD/MM/YYYY format
         const [day, month, year] = parts;
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const fullYear = convertYear(year);
+        return `${fullYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       } else {
         // Assume MM/DD/YYYY format
         const [month, day, year] = parts;
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const fullYear = convertYear(year);
+        return `${fullYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
     }
   }

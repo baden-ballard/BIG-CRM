@@ -11,19 +11,6 @@ interface Group {
   name: string;
 }
 
-interface CSVRow {
-  participant: string;
-  dateOfBirth: string;
-  phoneNumber: string;
-  emailAddress: string;
-  address: string;
-  hireDate: string;
-  terminationDate: string;
-  class: string;
-  planName: string;
-  option: string;
-  rate: string;
-}
 
 export default function UploadParticipantsPage() {
   const router = useRouter();
@@ -69,150 +56,23 @@ export default function UploadParticipantsPage() {
     }
   };
 
-  const parseCSVLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          // Escaped quote
-          current += '"';
-          i++; // Skip next quote
-        } else {
-          // Toggle quote state
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        // End of field
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    
-    // Add last field
-    result.push(current.trim());
-    
-    return result;
-  };
-
-  const parseCSV = (csvText: string): CSVRow[] => {
-    const lines = csvText.split('\n').filter(line => line.trim());
-    if (lines.length < 2) {
-      throw new Error('CSV must have at least a header row and one data row');
-    }
-
-    // Parse header row
-    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/^"|"$/g, ''));
-    
-    // Expected headers (case-insensitive)
-    const expectedHeaders = [
-      'participant',
-      'date of birth',
-      'phone number',
-      'email address',
-      'address',
-      'hire date',
-      'termination date',
-      'class',
-      'plan name',
-      'option',
-      'rate'
-    ];
-
-    // Map headers to indices
-    const headerMap: Record<string, number> = {};
-    expectedHeaders.forEach(expected => {
-      const index = headers.findIndex(h => {
-        const normalizedH = h.replace(/^"|"$/g, '').trim();
-        return normalizedH === expected || normalizedH === expected.replace(/\s+/g, '');
-      });
-      if (index === -1) {
-        throw new Error(`Missing required column: ${expected}`);
-      }
-      headerMap[expected] = index;
-    });
-
-    // Parse data rows
-    const rows: CSVRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''));
-      if (values.length < expectedHeaders.length) {
-        continue; // Skip incomplete rows
-      }
-
-      rows.push({
-        participant: values[headerMap['participant']] || '',
-        dateOfBirth: values[headerMap['date of birth']] || '',
-        phoneNumber: values[headerMap['phone number']] || '',
-        emailAddress: values[headerMap['email address']] || '',
-        address: values[headerMap['address']] || '',
-        hireDate: values[headerMap['hire date']] || '',
-        terminationDate: values[headerMap['termination date']] || '',
-        class: values[headerMap['class']] || '',
-        planName: values[headerMap['plan name']] || '',
-        option: values[headerMap['option']] || '',
-        rate: values[headerMap['rate']] || '',
-      });
-    }
-
-    return rows;
-  };
-
-  const normalizeDate = (dateStr: string): string | null => {
-    if (!dateStr || dateStr.trim() === '') return null;
-    
-    // Handle various date formats
-    const dateStrTrimmed = dateStr.trim();
-    
-    // Try MM/DD/YYYY or DD/MM/YYYY
-    if (dateStrTrimmed.includes('/')) {
-      const parts = dateStrTrimmed.split('/').map(Number);
-      if (parts.length === 3) {
-        // Check if first part is > 12, then it's likely DD/MM/YYYY
-        if (parts[0] > 12) {
-          // DD/MM/YYYY format
-          const [day, month, year] = parts;
-          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        } else {
-          // Assume MM/DD/YYYY format (US format)
-          const [month, day, year] = parts;
-          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        }
-      }
-    }
-    
-    // Try YYYY-MM-DD format
-    if (dateStrTrimmed.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      return dateStrTrimmed;
-    }
-    
-    // Try parsing as Date object
-    const date = new Date(dateStrTrimmed);
-    if (!isNaN(date.getTime())) {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-    
-    return null;
-  };
-
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-        alert('Please select a CSV file');
+      const fileName = file.name.toLowerCase();
+      const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+      const isCSV = fileName.endsWith('.csv') || file.type === 'text/csv';
+      
+      if (!isExcel && !isCSV) {
+        alert('Please select a CSV or Excel file (.csv, .xlsx, .xls)');
+        e.target.value = ''; // Clear the input
+        setCsvFile(null);
         return;
       }
       setCsvFile(file);
       setUploadStatus(null);
+    } else {
+      setCsvFile(null);
     }
   };
 
@@ -220,7 +80,7 @@ export default function UploadParticipantsPage() {
     e.preventDefault();
     
     if (!csvFile) {
-      alert('Please select a CSV file');
+      alert('Please select a CSV or Excel file');
       return;
     }
 
@@ -233,13 +93,8 @@ export default function UploadParticipantsPage() {
     setUploadStatus(null);
 
     try {
-      // Read CSV file
-      const csvText = await csvFile.text();
-      const rows = parseCSV(csvText);
-
-      if (rows.length === 0) {
-        throw new Error('No data rows found in CSV');
-      }
+      // Note: File parsing is now handled by the API endpoint
+      // We just need to send the file to the API
 
       // Process upload via API
       const formData = new FormData();
@@ -268,6 +123,10 @@ export default function UploadParticipantsPage() {
       setCsvFile(null);
       setPlanStartDate('');
       if (e.target instanceof HTMLFormElement) {
+        const fileInput = e.target.querySelector('input[type="file"]') as HTMLInputElement;
+        if (fileInput) {
+          fileInput.value = '';
+        }
         e.target.reset();
       }
     } catch (error: any) {
@@ -324,7 +183,7 @@ export default function UploadParticipantsPage() {
           Upload Participants
         </h1>
         <p className="text-[var(--glass-gray-medium)]">
-          Upload participants from CSV file for {group.name}
+          Upload participants from CSV or Excel file for {group.name}
         </p>
       </div>
 
@@ -367,21 +226,26 @@ export default function UploadParticipantsPage() {
             </div>
           </div>
 
-          {/* CSV File Upload */}
+          {/* File Upload */}
           <div>
             <label htmlFor="csvFile" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-              CSV File *
+              CSV or Excel File *
             </label>
             <input
               type="file"
               id="csvFile"
-              accept=".csv"
+              accept=".csv,.xlsx,.xls"
               onChange={handleFileChange}
               required
               className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
             />
+            {csvFile && (
+              <p className="text-sm text-green-600 mt-2 font-medium">
+                ✓ Selected: {csvFile.name}
+              </p>
+            )}
             <p className="text-xs text-[var(--glass-gray-medium)] mt-2">
-              CSV must include columns: Participant, Date of Birth, Phone Number, Email Address, Address, Hire Date, Termination Date, Class, Plan Name, Option, Rate
+              File must include columns: Participant, Date of Birth (Participant), Phone Number, Email Address, Address, Hire Date, Termination Date, Class, Plan Name, Option, Rate. For dependents, also include: Name (Dependent), Relationship to Participant, Date of Birth (Dependant). Dependents must come after their participant in the file.
             </p>
           </div>
 
@@ -416,14 +280,23 @@ export default function UploadParticipantsPage() {
             >
               Cancel
             </button>
-            <GlassButton
-              type="submit"
-              variant="primary"
-              disabled={isUploading || !csvFile || !planStartDate}
-              className={isUploading || !csvFile || !planStartDate ? 'opacity-50 cursor-not-allowed' : ''}
-            >
-              {isUploading ? 'Uploading...' : 'Upload Participants'}
-            </GlassButton>
+            <div className="flex flex-col items-end gap-2">
+              {(!csvFile || !planStartDate) && (
+                <p className="text-xs text-[var(--glass-gray-medium)]">
+                  {!csvFile && !planStartDate && 'Please select a file and plan start date'}
+                  {!csvFile && planStartDate && 'Please select a file'}
+                  {csvFile && !planStartDate && 'Please select a plan start date'}
+                </p>
+              )}
+              <GlassButton
+                type="submit"
+                variant="primary"
+                disabled={isUploading || !csvFile || !planStartDate}
+                className={isUploading || !csvFile || !planStartDate ? 'opacity-50 cursor-not-allowed' : ''}
+              >
+                {isUploading ? 'Uploading...' : 'Upload Participants'}
+              </GlassButton>
+            </div>
           </div>
         </form>
       </GlassCard>

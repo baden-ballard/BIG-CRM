@@ -42,6 +42,13 @@ interface ParticipantGroupPlanRate {
     rate: number;
     start_date: string | null;
     end_date: string | null;
+    employer_contribution_type?: string | null;
+    employer_employee_contribution_value?: number | null;
+    employer_spouse_contribution_value?: number | null;
+    employer_child_contribution_value?: number | null;
+    class_1_contribution_amount?: number | null;
+    class_2_contribution_amount?: number | null;
+    class_3_contribution_amount?: number | null;
   } | null;
 }
 
@@ -99,7 +106,14 @@ export default function ParticipantGroupPlanRatesPage() {
             id,
             rate,
             start_date,
-            end_date
+            end_date,
+            employer_contribution_type,
+            employer_employee_contribution_value,
+            employer_spouse_contribution_value,
+            employer_child_contribution_value,
+            class_1_contribution_amount,
+            class_2_contribution_amount,
+            class_3_contribution_amount
           )
         `)
         .order('created_at', { ascending: false });
@@ -136,59 +150,114 @@ export default function ParticipantGroupPlanRatesPage() {
   };
 
   const getEmployerContributionInfo = (rateRecord: ParticipantGroupPlanRate) => {
-    // Use the stored values from the rate history record
-    // These are snapshots of the contribution info at the time the rate was created
+    const groupOptionRate = rateRecord.group_option_rate as any;
+    
+    // ALWAYS use the contribution type from the active Group Plan Options Rate History (group_option_rates)
+    // This is the source of truth for what the contribution type was when the rate was active
+    let contributionType: string | null = null;
+    let contributionAmount: number | null = null;
+    
+    // Priority 1: Use contribution type from group_option_rate (Group Plan Options Rate History)
+    if (groupOptionRate?.employer_contribution_type) {
+      contributionType = groupOptionRate.employer_contribution_type;
+      
+      // Calculate amount from group_option_rate contribution values
+      const planType = rateRecord.participant_group_plan?.group_plan?.plan_type;
+      const dependentRelationship = rateRecord.participant_group_plan?.dependent?.relationship;
+      let contributionValue: number | null = null;
+      
+      // Get the appropriate contribution value based on plan type and relationship
+      if (planType === 'Age Banded') {
+        if (!rateRecord.participant_group_plan?.dependent) {
+          // Employee
+          contributionValue = groupOptionRate.employer_employee_contribution_value ?? null;
+        } else if (dependentRelationship === 'Spouse') {
+          // Spouse
+          contributionValue = groupOptionRate.employer_spouse_contribution_value ?? null;
+        } else if (dependentRelationship === 'Child') {
+          // Child
+          contributionValue = groupOptionRate.employer_child_contribution_value ?? null;
+        }
+      } else if (planType === 'Composite') {
+        // For Composite plans, use class contribution amounts
+        // Note: We'd need participant's class_number, but for now use class_1 as fallback
+        contributionValue = groupOptionRate.class_1_contribution_amount ?? null;
+      } else {
+        // For other plans, use employee contribution value
+        contributionValue = groupOptionRate.employer_employee_contribution_value ?? null;
+      }
+      
+      // Calculate the dollar amount if we have the rate and contribution info
+      if (contributionType && contributionValue !== null && groupOptionRate.rate) {
+        const rate = groupOptionRate.rate;
+        if (contributionType === 'Percentage') {
+          contributionAmount = rate * (contributionValue / 100);
+        } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+          contributionAmount = contributionValue;
+        }
+      }
+    } else {
+      // Fallback: If group_option_rate doesn't have contribution type, use stored value or group_plan
+      contributionType = rateRecord.employer_contribution_type;
+      contributionAmount = rateRecord.employer_contribution_amount;
+      
+      // If still NULL, try group_plan as last resort
+      if (!contributionType || contributionAmount === null || contributionAmount === undefined) {
+        const groupPlan = rateRecord.participant_group_plan?.group_plan;
+        if (groupPlan) {
+          if (!contributionType) {
+            contributionType = groupPlan.employer_contribution_type || null;
+          }
+          
+          if (contributionAmount === null || contributionAmount === undefined) {
+            const planType = groupPlan.plan_type;
+            const dependentRelationship = rateRecord.participant_group_plan?.dependent?.relationship;
+            let contributionValue: number | null = null;
+            
+            if (planType === 'Age Banded') {
+              if (!rateRecord.participant_group_plan?.dependent) {
+                contributionValue = groupPlan.employer_contribution_value ?? null;
+              } else if (dependentRelationship === 'Spouse') {
+                contributionValue = groupPlan.employer_spouse_contribution_value ?? null;
+              } else if (dependentRelationship === 'Child') {
+                contributionValue = groupPlan.employer_child_contribution_value ?? null;
+              }
+            } else {
+              contributionValue = groupPlan.employer_contribution_value ?? null;
+            }
+            
+            if (contributionType && contributionValue !== null && groupOptionRate?.rate) {
+              const rate = groupOptionRate.rate;
+              if (contributionType === 'Percentage') {
+                contributionAmount = rate * (contributionValue / 100);
+              } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                contributionAmount = contributionValue;
+              }
+            }
+          }
+        }
+      }
+    }
+    
     return { 
-      type: rateRecord.employer_contribution_type, 
-      amount: rateRecord.employer_contribution_amount 
+      type: contributionType, 
+      amount: contributionAmount 
     };
   };
 
   const calculateEmployeeResponsibleAmount = (rate: number | null, rateRecord: ParticipantGroupPlanRate) => {
     if (rate === null || rate === 0) return null;
     
-    let amountPaidByEmployer = 0;
-    let contributionValue: number | null = null;
-    const contributionType = rateRecord.employer_contribution_type || rateRecord.participant_group_plan?.group_plan?.employer_contribution_type;
-    const planType = rateRecord.participant_group_plan?.group_plan?.plan_type;
-    const dependentRelationship = rateRecord.participant_group_plan?.dependent?.relationship;
-
-    // For Age Banded plans, use the appropriate contribution value based on dependent type
-    if (planType === 'Age Banded') {
-      if (!rateRecord.participant_group_plan?.dependent) {
-        // Employee
-        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value ?? null;
-      } else if (dependentRelationship === 'Spouse') {
-        // Spouse
-        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_spouse_contribution_value ?? null;
-      } else if (dependentRelationship === 'Child') {
-        // Child
-        contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_child_contribution_value ?? null;
-      }
-    } else {
-      // For non-Age Banded plans, use the standard contribution value
-      contributionValue = rateRecord.participant_group_plan?.group_plan?.employer_contribution_value ?? null;
-    }
-
-    // If we can't determine the contribution value from the plan, fall back to stored amount
-    if (contributionValue === null || contributionValue === undefined) {
-      const storedAmount = rateRecord.employer_contribution_amount;
-      if (storedAmount !== null && storedAmount !== undefined) {
-        amountPaidByEmployer = storedAmount;
-      } else {
-        return null;
-      }
-    } else if (contributionType && contributionValue !== null) {
-      // Calculate the actual dollar amount based on contribution type
-      if (contributionType === 'Percentage') {
-        amountPaidByEmployer = rate * (contributionValue / 100);
-      } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
-        amountPaidByEmployer = contributionValue;
-      }
-    } else {
+    // Use getEmployerContributionInfo to get the correct contribution info (prioritizes group_option_rate)
+    const contributionInfo = getEmployerContributionInfo(rateRecord);
+    
+    if (!contributionInfo.type || contributionInfo.amount === null || contributionInfo.amount === undefined) {
       return null;
     }
-
+    
+    // Use the contribution amount from getEmployerContributionInfo (already calculated correctly)
+    const amountPaidByEmployer = contributionInfo.amount;
+    
     return Math.max(0, rate - amountPaidByEmployer);
   };
 
