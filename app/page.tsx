@@ -18,12 +18,20 @@ interface ParticipantWithBirthday extends Participant {
   daysAgo: number;
 }
 
+interface ParticipantWithUpcomingBirthday extends Participant {
+  birthdayDate: Date;
+  daysUntil: number;
+}
+
 
 export default function Dashboard() {
   const router = useRouter();
   const [recentBirthdays, setRecentBirthdays] = useState<ParticipantWithBirthday[]>([]);
+  const [upcomingBirthdays, setUpcomingBirthdays] = useState<ParticipantWithUpcomingBirthday[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingUpcoming, setLoadingUpcoming] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorUpcoming, setErrorUpcoming] = useState<string | null>(null);
   const [totalGroups, setTotalGroups] = useState<number>(0);
   const [totalParticipants, setTotalParticipants] = useState<number>(0);
   const [activePrograms, setActivePrograms] = useState<number>(0);
@@ -31,6 +39,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchRecentBirthdays();
+    fetchUpcomingBirthdays();
     fetchDashboardStats();
   }, []);
 
@@ -134,6 +143,104 @@ export default function Dashboard() {
     if (daysAgo === 0) return 'Today';
     if (daysAgo === 1) return '1 day ago';
     return `${daysAgo} days ago`;
+  };
+
+  const fetchUpcomingBirthdays = async () => {
+    try {
+      setLoadingUpcoming(true);
+      setErrorUpcoming(null);
+
+      // First, get all participant IDs that have Medicare plans
+      const { data: medicareData, error: medicareError } = await supabase
+        .from('participant_medicare_plans')
+        .select('participant_id');
+
+      if (medicareError) {
+        throw medicareError;
+      }
+
+      const medicareParticipantIds = new Set<string>();
+      (medicareData || []).forEach((plan: any) => {
+        medicareParticipantIds.add(plan.participant_id);
+      });
+
+      // If no participants have Medicare plans, return early
+      if (medicareParticipantIds.size === 0) {
+        setUpcomingBirthdays([]);
+        setLoadingUpcoming(false);
+        return;
+      }
+
+      // Fetch participants with Medicare plans and DOB
+      const { data, error: fetchError } = await supabase
+        .from('participants')
+        .select('id, client_name, dob, email_address, phone_number')
+        .not('dob', 'is', null)
+        .in('id', Array.from(medicareParticipantIds));
+
+      if (fetchError) {
+        throw fetchError;
+      }
+
+      const participants = (data || []) as Participant[];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Normalize to start of day
+      const sixtyDaysFromNow = new Date(today);
+      sixtyDaysFromNow.setDate(today.getDate() + 60);
+
+      // Filter participants whose birthday will occur in the next 60 days
+      const upcomingBirthdayParticipants: ParticipantWithUpcomingBirthday[] = [];
+
+      participants.forEach((participant) => {
+        if (!participant.dob) return;
+
+        const dob = new Date(participant.dob);
+        const currentYear = today.getFullYear();
+        
+        // Create birthday date for this year
+        const thisYearBirthday = new Date(currentYear, dob.getMonth(), dob.getDate());
+        thisYearBirthday.setHours(0, 0, 0, 0);
+        
+        // Create birthday date for next year (in case we're late in the year)
+        const nextYearBirthday = new Date(currentYear + 1, dob.getMonth(), dob.getDate());
+        nextYearBirthday.setHours(0, 0, 0, 0);
+
+        // Check if this year's birthday is within the next 60 days
+        if (thisYearBirthday > today && thisYearBirthday <= sixtyDaysFromNow) {
+          const daysUntil = Math.floor((thisYearBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          upcomingBirthdayParticipants.push({
+            ...participant,
+            birthdayDate: thisYearBirthday,
+            daysUntil,
+          });
+        }
+        // Check if next year's birthday is within the next 60 days (handles year boundary)
+        else if (nextYearBirthday > today && nextYearBirthday <= sixtyDaysFromNow) {
+          const daysUntil = Math.floor((nextYearBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          upcomingBirthdayParticipants.push({
+            ...participant,
+            birthdayDate: nextYearBirthday,
+            daysUntil,
+          });
+        }
+      });
+
+      // Sort by soonest birthday first
+      upcomingBirthdayParticipants.sort((a, b) => a.birthdayDate.getTime() - b.birthdayDate.getTime());
+
+      setUpcomingBirthdays(upcomingBirthdayParticipants);
+    } catch (err: any) {
+      console.error('Error fetching upcoming birthdays:', err);
+      setErrorUpcoming(err.message || 'Failed to load upcoming birthdays');
+    } finally {
+      setLoadingUpcoming(false);
+    }
+  };
+
+  const getDaysUntilText = (daysUntil: number) => {
+    if (daysUntil === 0) return 'Today';
+    if (daysUntil === 1) return 'In 1 day';
+    return `In ${daysUntil} days`;
   };
 
   const fetchDashboardStats = async () => {
@@ -294,7 +401,7 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Medicare Birthdays */}
-      <GlassCard>
+      <GlassCard className="mb-8">
         <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
           Recent Medicare Birthdays (Last 60 Days)
         </h2>
@@ -336,6 +443,69 @@ export default function Dashboard() {
                       </span>
                       <span className="text-[var(--glass-black-dark)] font-medium">
                         {getDaysAgoText(participant.daysAgo)}
+                      </span>
+                      {participant.email_address && (
+                        <span>
+                          Email: <span className="text-[var(--glass-black-dark)]">{participant.email_address}</span>
+                        </span>
+                      )}
+                      {participant.phone_number && (
+                        <span>
+                          Phone: <span className="text-[var(--glass-black-dark)]">{participant.phone_number}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Upcoming Medicare Birthdays */}
+      <GlassCard>
+        <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
+          Upcoming Medicare Birthdays (Next 60 Days)
+        </h2>
+        
+        {loadingUpcoming && (
+          <p className="text-[var(--glass-gray-medium)] py-4">
+            Loading upcoming Medicare birthdays...
+          </p>
+        )}
+
+        {errorUpcoming && (
+          <p className="text-red-500 py-4">
+            Error: {errorUpcoming}
+          </p>
+        )}
+
+        {!loadingUpcoming && !errorUpcoming && upcomingBirthdays.length === 0 && (
+          <p className="text-[var(--glass-gray-medium)] py-4">
+            No Medicare participants have birthdays in the next 60 days.
+          </p>
+        )}
+
+        {!loadingUpcoming && !errorUpcoming && upcomingBirthdays.length > 0 && (
+          <div className="space-y-4">
+            {upcomingBirthdays.map((participant) => (
+              <div
+                key={participant.id}
+                className="p-4 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 transition-all cursor-pointer"
+                onClick={() => router.push(`/participants/${participant.id}`)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-1">
+                      {participant.client_name}
+                    </h3>
+                    <div className="flex flex-wrap gap-4 text-sm text-[var(--glass-gray-medium)]">
+                      <span>
+                        Birthday: <span className="text-[var(--glass-black-dark)]">{formatDate(participant.birthdayDate)}</span>
+                      </span>
+                      <span className="text-[var(--glass-black-dark)] font-medium">
+                        {getDaysUntilText(participant.daysUntil)}
                       </span>
                       {participant.email_address && (
                         <span>

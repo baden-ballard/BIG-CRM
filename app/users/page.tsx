@@ -6,6 +6,7 @@ import GlassCard from '../../components/GlassCard';
 import GlassButton from '../../components/GlassButton';
 import SearchFilter from '../../components/SearchFilter';
 import { supabase } from '../../lib/supabase';
+import { getCurrentUser } from '../../lib/auth';
 
 interface User {
   id: string;
@@ -22,10 +23,21 @@ export default function UsersPage() {
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
+    fetchCurrentUser();
   }, []);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const user = await getCurrentUser();
+      setCurrentUserEmail(user?.email || null);
+    } catch (err) {
+      console.error('Error fetching current user:', err);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -156,9 +168,16 @@ export default function UsersPage() {
                     <h3 className="text-xl font-bold text-[var(--glass-black-dark)] mb-2">
                       {user.name}
                     </h3>
-                    <p className="text-sm text-[var(--glass-gray-medium)] mb-1">
-                      {user.email}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-[var(--glass-gray-medium)] mb-1">
+                        {user.email}
+                      </p>
+                      {currentUserEmail && currentUserEmail.toLowerCase() === user.email.toLowerCase() && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-700 font-medium">
+                          Currently Logged In
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getRoleBadgeColor(user.role)}`}>

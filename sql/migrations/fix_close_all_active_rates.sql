@@ -1,7 +1,8 @@
 -- Migration: Fix trigger to close ALL active rates when a new rate is added
 -- Date: 2025-01-XX
--- Description: Updates handle_group_option_rate_dates() and handle_medicare_rate_dates() 
+-- Description: Updates handle_group_option_rate_dates() and handle_medicare_child_rate_dates() 
 --              to close all active rates (end_date IS NULL) instead of just the most recent one
+--              Note: Uses medicare_child_rates table (not medicare_rates)
 
 -- Updated function to handle group option rate dates - closes ALL active rates
 CREATE OR REPLACE FUNCTION handle_group_option_rate_dates()
@@ -54,8 +55,9 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Updated function to handle medicare rate dates - closes ALL active rates
-CREATE OR REPLACE FUNCTION handle_medicare_rate_dates()
+-- Updated function to handle medicare child rate dates - closes ALL active rates
+-- Note: Uses medicare_child_rates table (not medicare_rates)
+CREATE OR REPLACE FUNCTION handle_medicare_child_rate_dates()
 RETURNS TRIGGER AS $$
 DECLARE
     has_previous_rates BOOLEAN;
@@ -66,7 +68,7 @@ BEGIN
         -- Check if there are any previous rates for this plan
         SELECT EXISTS(
             SELECT 1
-            FROM medicare_rates
+            FROM medicare_child_rates
             WHERE medicare_plan_id = NEW.medicare_plan_id
               AND id != NEW.id
         ) INTO has_previous_rates;
@@ -83,7 +85,7 @@ BEGIN
             
             -- Close ALL active rates (where end_date IS NULL) for this plan
             -- Set their end_date to day before new rate's start_date
-            UPDATE medicare_rates
+            UPDATE medicare_child_rates
             SET end_date = new_start_date - INTERVAL '1 day',
                 updated_at = NOW()
             WHERE medicare_plan_id = NEW.medicare_plan_id
@@ -102,8 +104,12 @@ CREATE TRIGGER handle_group_option_rate_dates_trigger
     BEFORE INSERT ON group_option_rates
     FOR EACH ROW EXECUTE FUNCTION handle_group_option_rate_dates();
 
+-- Drop old trigger on medicare_rates if it exists (for backward compatibility)
 DROP TRIGGER IF EXISTS handle_medicare_rate_dates_trigger ON medicare_rates;
-CREATE TRIGGER handle_medicare_rate_dates_trigger
-    BEFORE INSERT ON medicare_rates
-    FOR EACH ROW EXECUTE FUNCTION handle_medicare_rate_dates();
+
+-- Create trigger on medicare_child_rates table
+DROP TRIGGER IF EXISTS handle_medicare_child_rate_dates_trigger ON medicare_child_rates;
+CREATE TRIGGER handle_medicare_child_rate_dates_trigger
+    BEFORE INSERT ON medicare_child_rates
+    FOR EACH ROW EXECUTE FUNCTION handle_medicare_child_rate_dates();
 

@@ -12,6 +12,7 @@ interface CSVRow {
   emailAddress: string;
   address: string;
   planStartDate: string;
+  provider: string;
   planName: string;
   rate: string;
 }
@@ -76,6 +77,7 @@ export default function UploadMedicareParticipantsPage() {
       'email address',
       'address',
       'plan start date',
+      'provider',
       'plan name',
       'rate'
     ];
@@ -108,6 +110,7 @@ export default function UploadMedicareParticipantsPage() {
         emailAddress: values[headerMap['email address']] || '',
         address: values[headerMap['address']] || '',
         planStartDate: values[headerMap['plan start date']] || '',
+        provider: values[headerMap['provider']] || '',
         planName: values[headerMap['plan name']] || '',
         rate: values[headerMap['rate']] || '',
       });
@@ -119,8 +122,12 @@ export default function UploadMedicareParticipantsPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-        alert('Please select a CSV file');
+      const fileName = file.name.toLowerCase();
+      const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+      const isCSV = fileName.endsWith('.csv') || file.type === 'text/csv';
+      
+      if (!isExcel && !isCSV) {
+        alert('Please select a CSV or Excel file (.csv, .xlsx, .xls)');
         return;
       }
       setCsvFile(file);
@@ -132,7 +139,7 @@ export default function UploadMedicareParticipantsPage() {
     e.preventDefault();
     
     if (!csvFile) {
-      alert('Please select a CSV file');
+      alert('Please select a CSV or Excel file');
       return;
     }
 
@@ -199,27 +206,27 @@ export default function UploadMedicareParticipantsPage() {
           Upload Medicare Participants
         </h1>
         <p className="text-[var(--glass-gray-medium)]">
-          Upload Medicare participants from CSV file
+          Upload Medicare participants from CSV or Excel file
         </p>
       </div>
 
       <GlassCard>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* CSV File Upload */}
+          {/* File Upload */}
           <div>
             <label htmlFor="csvFile" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-              CSV File *
+              File (CSV or Excel) *
             </label>
             <input
               type="file"
               id="csvFile"
-              accept=".csv"
+              accept=".csv,.xlsx,.xls"
               onChange={handleFileChange}
               required
               className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
             />
             <p className="text-xs text-[var(--glass-gray-medium)] mt-2">
-              CSV must include columns: Participant, Date of Birth, Phone Number, Email Address, Address, Plan Start Date, Plan Name, Rate
+              File must include columns: Participant, Date of Birth, Phone Number, Email Address, Address, Plan Start Date, Provider, Plan Name, Rate
             </p>
           </div>
 

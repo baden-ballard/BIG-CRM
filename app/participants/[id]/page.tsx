@@ -2982,14 +2982,23 @@ export default function ParticipantDetailPage() {
                 >
                   Group Plan Details
                 </button>
-                <button
-                  type="button"
-                  onClick={() => navigateToSection('dependents')}
-                  className="px-4 py-2 rounded-lg font-medium text-white bg-white/20 hover:bg-white/30 transition-all duration-200 backdrop-blur-sm border border-white/30 w-full"
-                >
-                  Dependents
-                </button>
               </>
+            )}
+            <button
+              type="button"
+              onClick={() => navigateToSection('medicare-plans')}
+              className="px-4 py-2 rounded-lg font-medium text-white bg-white/20 hover:bg-white/30 transition-all duration-200 backdrop-blur-sm border border-white/30 w-full"
+            >
+              Medicare Plans
+            </button>
+            {participant?.group_id && (
+              <button
+                type="button"
+                onClick={() => navigateToSection('dependents')}
+                className="px-4 py-2 rounded-lg font-medium text-white bg-white/20 hover:bg-white/30 transition-all duration-200 backdrop-blur-sm border border-white/30 w-full"
+              >
+                Dependents
+              </button>
             )}
             {!participant?.group_id && (
               <button
@@ -3000,13 +3009,6 @@ export default function ParticipantDetailPage() {
                 Persons of Interest
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => navigateToSection('medicare-plans')}
-              className="px-4 py-2 rounded-lg font-medium text-white bg-white/20 hover:bg-white/30 transition-all duration-200 backdrop-blur-sm border border-white/30 w-full"
-            >
-              Medicare Plans
-            </button>
             <button
               type="button"
               onClick={() => navigateToSection('notes')}
@@ -4213,8 +4215,8 @@ export default function ParticipantDetailPage() {
                       if (planRatesData?.activeRate) {
                         rate = planRatesData.activeRate.rate;
                       } else {
-                        // Fall back to linked rate
-                        rate = plan.medicare_child_rate?.rate || null;
+                        // Fall back to linked rate (use ?? instead of || to preserve 0 values)
+                        rate = plan.medicare_child_rate?.rate ?? null;
                       }
                     }
 
@@ -4298,8 +4300,8 @@ export default function ParticipantDetailPage() {
                 </h3>
                 <div className="space-y-3">
                   {terminatedMedicarePlans.map((plan) => {
-                    // Use active_rate if available, otherwise fall back to linked rate
-                    const rate = (plan as any).active_rate?.rate || plan.medicare_child_rate?.rate || null;
+                    // Use active_rate if available, otherwise fall back to linked rate (use ?? instead of || to preserve 0 values)
+                    const rate = (plan as any).active_rate?.rate ?? plan.medicare_child_rate?.rate ?? null;
 
                     const handlePlanClick = (e: React.MouseEvent) => {
                       e.preventDefault();
