@@ -215,8 +215,10 @@ export default function ParticipantDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [planToDelete, setPlanToDelete] = useState<ParticipantPlan | ParticipantMedicarePlan | null>(null);
   const [isDeletingPlan, setIsDeletingPlan] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
-    'participant-information': true,
+    'participant-information': false,
     'group-information': true,
     'group-plan-details': true,
     'medicare-plans': true,
@@ -1250,6 +1252,158 @@ export default function ParticipantDetailPage() {
       } else {
         setSelectedGroup(null);
       }
+    }
+  };
+
+  const handleDeleteClick = () => {
+    // Show confirmation dialog
+    setShowDeleteDialog(true);
+  };
+
+  const handleDeleteParticipant = async () => {
+    if (!participantId) return;
+
+    try {
+      setIsDeleting(true);
+
+      // First, get all participant_group_plan IDs to delete their rate history
+      const { data: participantGroupPlans } = await supabase
+        .from('participant_group_plans')
+        .select('id')
+        .eq('participant_id', participantId);
+
+      const participantGroupPlanIds = participantGroupPlans?.map(p => p.id) || [];
+
+      // Delete participant_group_plan_rates (rate history for participant group plans)
+      if (participantGroupPlanIds.length > 0) {
+        const { error: deleteGroupPlanRatesError } = await supabase
+          .from('participant_group_plan_rates')
+          .delete()
+          .in('participant_group_plan_id', participantGroupPlanIds);
+
+        if (deleteGroupPlanRatesError) {
+          console.error('Error deleting participant group plan rates:', deleteGroupPlanRatesError);
+          // Continue with deletion even if this fails
+        }
+      }
+
+      // Delete participant_group_plans (all records for this participant)
+      const { error: deleteGroupPlansError } = await supabase
+        .from('participant_group_plans')
+        .delete()
+        .eq('participant_id', participantId);
+
+      if (deleteGroupPlansError) {
+        console.error('Error deleting participant group plans:', deleteGroupPlansError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete participant_medicare_plans (all records for this participant)
+      const { error: deleteMedicarePlansError } = await supabase
+        .from('participant_medicare_plans')
+        .delete()
+        .eq('participant_id', participantId);
+
+      if (deleteMedicarePlansError) {
+        console.error('Error deleting participant medicare plans:', deleteMedicarePlansError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete dependents (all records for this participant)
+      const { error: deleteDependentsError } = await supabase
+        .from('dependents')
+        .delete()
+        .eq('participant_id', participantId);
+
+      if (deleteDependentsError) {
+        console.error('Error deleting dependents:', deleteDependentsError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete participant_change_logs (all records for this participant)
+      const { error: deleteChangeLogsError } = await supabase
+        .from('participant_change_logs')
+        .delete()
+        .eq('participant_id', participantId);
+
+      if (deleteChangeLogsError) {
+        console.error('Error deleting participant change logs:', deleteChangeLogsError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete participant_programs (all records for this participant)
+      const { error: deleteParticipantProgramsError } = await supabase
+        .from('participant_programs')
+        .delete()
+        .eq('participant_id', participantId);
+
+      if (deleteParticipantProgramsError) {
+        console.error('Error deleting participant programs:', deleteParticipantProgramsError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete notes (all records where participant_id matches)
+      const { error: deleteNotesError } = await supabase
+        .from('notes')
+        .delete()
+        .eq('participant_id', participantId);
+
+      if (deleteNotesError) {
+        console.error('Error deleting notes:', deleteNotesError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete documents (all records where entity_type is 'Participant' and entity_id matches)
+      const { error: deleteDocumentsError } = await supabase
+        .from('documents')
+        .delete()
+        .eq('entity_type', 'Participant')
+        .eq('entity_id', participantId);
+
+      if (deleteDocumentsError) {
+        console.error('Error deleting documents:', deleteDocumentsError);
+        // Continue with deletion even if this fails
+      }
+
+      // Delete participant_relationships (where participant_id_1 or participant_id_2 matches)
+      const { error: deleteRelationshipsError1 } = await supabase
+        .from('participant_relationships')
+        .delete()
+        .eq('participant_id_1', participantId);
+
+      if (deleteRelationshipsError1) {
+        console.error('Error deleting participant relationships (id_1):', deleteRelationshipsError1);
+        // Continue with deletion even if this fails
+      }
+
+      const { error: deleteRelationshipsError2 } = await supabase
+        .from('participant_relationships')
+        .delete()
+        .eq('participant_id_2', participantId);
+
+      if (deleteRelationshipsError2) {
+        console.error('Error deleting participant relationships (id_2):', deleteRelationshipsError2);
+        // Continue with deletion even if this fails
+      }
+
+      // Finally, delete the participant itself
+      const { error: deleteParticipantError } = await supabase
+        .from('participants')
+        .delete()
+        .eq('id', participantId);
+
+      if (deleteParticipantError) {
+        throw deleteParticipantError;
+      }
+
+      // Redirect to participants page
+      router.push('/participants');
+    } catch (err: any) {
+      console.error('Error deleting participant:', err);
+      alert('Failed to delete participant. Please try again.');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
     }
   };
 
@@ -2879,6 +3033,13 @@ export default function ParticipantDetailPage() {
               </button>
               {isEditMode ? (
                 <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={handleDeleteClick}
+                    className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 whitespace-nowrap"
+                  >
+                    Delete
+                  </button>
                   <button
                     type="button"
                     onClick={handleCancelEdit}
@@ -4953,6 +5114,38 @@ export default function ParticipantDetailPage() {
                 className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isDeletingPlan ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Participant Confirmation Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDeleteDialog(false)}>
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4 text-center">
+              Delete Participant
+            </h3>
+            <p className="text-[var(--glass-gray-medium)] mb-6 text-center">
+              You are deleting a Participant. This will delete all participant information including group plans, Medicare plans, dependents, notes, and related records. Rate history will be preserved. This action cannot be undone. Are you sure you want to continue?
+            </p>
+            <div className="flex gap-4 justify-center">
+              <button
+                type="button"
+                onClick={() => setShowDeleteDialog(false)}
+                disabled={isDeleting}
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteParticipant}
+                disabled={isDeleting}
+                className="px-6 py-3 rounded-full font-semibold bg-[#C6282B] text-white hover:bg-[#A01F22] shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

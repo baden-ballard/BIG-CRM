@@ -18,31 +18,20 @@ interface ParticipantWithBirthday extends Participant {
   daysAgo: number;
 }
 
-interface ParticipantWithEligibility {
-  id: string;
-  client_name: string;
-  dob: string | null;
-  email_address: string | null;
-  phone_number: string | null;
-  group_id: string;
-  group_name: string;
-  hire_date: string | null;
-  eligibility_start_date: Date | null;
-  class_number: number | null;
-}
 
 export default function Dashboard() {
   const router = useRouter();
   const [recentBirthdays, setRecentBirthdays] = useState<ParticipantWithBirthday[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [eligibleWithoutPlans, setEligibleWithoutPlans] = useState<ParticipantWithEligibility[]>([]);
-  const [loadingEligible, setLoadingEligible] = useState(true);
-  const [errorEligible, setErrorEligible] = useState<string | null>(null);
+  const [totalGroups, setTotalGroups] = useState<number>(0);
+  const [totalParticipants, setTotalParticipants] = useState<number>(0);
+  const [activePrograms, setActivePrograms] = useState<number>(0);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   useEffect(() => {
     fetchRecentBirthdays();
-    fetchEligibleWithoutPlans();
+    fetchDashboardStats();
   }, []);
 
   const fetchRecentBirthdays = async () => {
@@ -147,61 +136,37 @@ export default function Dashboard() {
     return `${daysAgo} days ago`;
   };
 
-  const calculateEligibilityStartDate = (hireDate: Date, eligibilityPeriod: string | null): Date | null => {
-    if (!eligibilityPeriod || !hireDate) return null;
-
-    let daysToAdd = 0;
-    if (eligibilityPeriod === 'First of Month Following 30 Days') {
-      daysToAdd = 30;
-    } else if (eligibilityPeriod === 'First of the Month Following 60 Days') {
-      daysToAdd = 60;
-    }
-    // For "First of Month Following Date of Hire", daysToAdd stays 0
-
-    const eligibilityDate = new Date(hireDate);
-    eligibilityDate.setDate(hireDate.getDate() + daysToAdd);
-    
-    // Get first of the following month
-    const firstOfMonth = new Date(eligibilityDate.getFullYear(), eligibilityDate.getMonth() + 1, 1);
-    firstOfMonth.setHours(0, 0, 0, 0);
-    
-    return firstOfMonth;
-  };
-
-  const fetchEligibleWithoutPlans = async () => {
+  const fetchDashboardStats = async () => {
     try {
-      setLoadingEligible(true);
-      setErrorEligible(null);
+      setLoadingStats(true);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
 
-      // Fetch participants with groups
-      const { data: participantsData, error: participantsError } = await supabase
-        .from('participants')
-        .select(`
-          id,
-          client_name,
-          email_address,
-          phone_number,
-          group_id,
-          hire_date,
-          class_number,
-          group:groups (
-            id,
-            name,
-            eligibility_period,
-            eligibility_period_class_2,
-            eligibility_period_class_3,
-            number_of_classes
-          )
-        `)
-        .not('group_id', 'is', null)
-        .not('hire_date', 'is', null);
+      // 1. Total Groups with active plans
+      // A plan is active if: effective_date <= today AND (termination_date is null OR termination_date >= today)
+      const { data: activeGroupPlans, error: groupsError } = await supabase
+        .from('group_plans')
+        .select('group_id, program_id, effective_date, termination_date')
+        .lte('effective_date', todayStr)
+        .or(`termination_date.is.null,termination_date.gte.${todayStr}`);
 
-      if (participantsError) {
-        throw participantsError;
+      if (groupsError) {
+        throw groupsError;
       }
 
-      // Fetch all participants with active plans
-      const { data: plansData, error: plansError } = await supabase
+      // Count distinct group_ids
+      const uniqueGroupIds = new Set<string>();
+      (activeGroupPlans || []).forEach((plan: any) => {
+        if (plan.group_id) {
+          uniqueGroupIds.add(plan.group_id);
+        }
+      });
+      setTotalGroups(uniqueGroupIds.size);
+
+      // 2. Total Participants with active plans
+      // First, get participants with active group plans
+      const { data: participantGroupPlans, error: pgpError } = await supabase
         .from('participant_group_plans')
         .select(`
           participant_id,
@@ -209,18 +174,15 @@ export default function Dashboard() {
           group_plan:group_plans (
             termination_date
           )
-        `);
+        `)
+        .or(`termination_date.is.null,termination_date.gte.${todayStr}`);
 
-      if (plansError) {
-        throw plansError;
+      if (pgpError) {
+        throw pgpError;
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      // Create a set of participant IDs with active plans
-      const participantsWithActivePlans = new Set<string>();
-      (plansData || []).forEach((plan: any) => {
+      const participantsWithActiveGroupPlans = new Set<string>();
+      (participantGroupPlans || []).forEach((plan: any) => {
         const participantTerminationDate = plan.termination_date 
           ? new Date(plan.termination_date)
           : null;
@@ -232,75 +194,51 @@ export default function Dashboard() {
         const isActive = (!participantTerminationDate || participantTerminationDate >= today) &&
                          (!groupPlanTerminationDate || groupPlanTerminationDate >= today);
         
-        if (isActive) {
-          participantsWithActivePlans.add(plan.participant_id);
+        if (isActive && plan.participant_id) {
+          participantsWithActiveGroupPlans.add(plan.participant_id);
         }
       });
 
-      // Filter participants: must be within eligibility window and have no active plans
-      const eligibleParticipants: ParticipantWithEligibility[] = [];
+      // Get participants with Medicare plans (assuming all Medicare plans are active)
+      const { data: medicarePlans, error: medicareError } = await supabase
+        .from('participant_medicare_plans')
+        .select('participant_id');
 
-      (participantsData || []).forEach((participant: any) => {
-        // Skip if participant has active plans
-        if (participantsWithActivePlans.has(participant.id)) {
-          return;
-        }
+      if (medicareError) {
+        throw medicareError;
+      }
 
-        const group = participant.group;
-        if (!group || !participant.hire_date) return;
-
-        const hireDate = new Date(participant.hire_date);
-        hireDate.setHours(0, 0, 0, 0);
-
-        // Determine which eligibility period to use based on class_number
-        let eligibilityPeriod: string | null = null;
-        if (participant.class_number === 1) {
-          eligibilityPeriod = group.eligibility_period;
-        } else if (participant.class_number === 2) {
-          eligibilityPeriod = group.eligibility_period_class_2;
-        } else if (participant.class_number === 3) {
-          eligibilityPeriod = group.eligibility_period_class_3;
-        } else {
-          // Default to first eligibility period if class_number is null or invalid
-          eligibilityPeriod = group.eligibility_period;
-        }
-
-        const eligibilityStartDate = calculateEligibilityStartDate(hireDate, eligibilityPeriod);
-        
-        if (!eligibilityStartDate) return;
-
-        // Check if participant is within eligibility window (eligibility has started)
-        // Since there's no explicit end date, we consider them eligible once eligibility has started
-        if (eligibilityStartDate <= today) {
-          eligibleParticipants.push({
-            id: participant.id,
-            client_name: participant.client_name,
-            dob: null,
-            email_address: participant.email_address,
-            phone_number: participant.phone_number,
-            group_id: participant.group_id,
-            group_name: group.name,
-            hire_date: participant.hire_date,
-            eligibility_start_date: eligibilityStartDate,
-            class_number: participant.class_number,
-          });
+      const participantsWithMedicarePlans = new Set<string>();
+      (medicarePlans || []).forEach((plan: any) => {
+        if (plan.participant_id) {
+          participantsWithMedicarePlans.add(plan.participant_id);
         }
       });
 
-      // Sort by eligibility start date (most recent first)
-      eligibleParticipants.sort((a, b) => {
-        if (!a.eligibility_start_date || !b.eligibility_start_date) return 0;
-        return b.eligibility_start_date.getTime() - a.eligibility_start_date.getTime();
-      });
+      // Combine both sets to get total unique participants with active plans
+      const allParticipantsWithPlans = new Set([
+        ...Array.from(participantsWithActiveGroupPlans),
+        ...Array.from(participantsWithMedicarePlans)
+      ]);
+      setTotalParticipants(allParticipantsWithPlans.size);
 
-      setEligibleWithoutPlans(eligibleParticipants);
+      // 3. Active Programs - count all program_ids from active group plans (not distinct)
+      // This counts programs per group, so if Group A has 3 programs with active plans, that's 3
+      let programCount = 0;
+      (activeGroupPlans || []).forEach((plan: any) => {
+        if (plan.program_id) {
+          programCount++;
+        }
+      });
+      setActivePrograms(programCount);
+
     } catch (err: any) {
-      console.error('Error fetching eligible participants without plans:', err);
-      setErrorEligible(err.message || 'Failed to load eligible participants');
+      console.error('Error fetching dashboard stats:', err);
     } finally {
-      setLoadingEligible(false);
+      setLoadingStats(false);
     }
   };
+
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -314,7 +252,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         <GlassCard className="p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -322,7 +260,7 @@ export default function Dashboard() {
                 Total Groups
               </p>
               <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
-                0
+                {loadingStats ? '...' : totalGroups}
               </p>
             </div>
           </div>
@@ -335,7 +273,7 @@ export default function Dashboard() {
                 Total Participants
               </p>
               <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
-                0
+                {loadingStats ? '...' : totalParticipants}
               </p>
             </div>
           </div>
@@ -348,20 +286,7 @@ export default function Dashboard() {
                 Active Programs
               </p>
               <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
-                0
-              </p>
-            </div>
-          </div>
-        </GlassCard>
-
-        <GlassCard className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-[var(--glass-gray-medium)] mb-1">
-                Pipeline Status
-              </p>
-              <p className="text-3xl font-bold text-[var(--glass-black-dark)]">
-                0
+                {loadingStats ? '...' : activePrograms}
               </p>
             </div>
           </div>
@@ -412,81 +337,6 @@ export default function Dashboard() {
                       <span className="text-[var(--glass-black-dark)] font-medium">
                         {getDaysAgoText(participant.daysAgo)}
                       </span>
-                      {participant.email_address && (
-                        <span>
-                          Email: <span className="text-[var(--glass-black-dark)]">{participant.email_address}</span>
-                        </span>
-                      )}
-                      {participant.phone_number && (
-                        <span>
-                          Phone: <span className="text-[var(--glass-black-dark)]">{participant.phone_number}</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </GlassCard>
-
-      {/* Eligible Participants Without Plans */}
-      <GlassCard className="mt-8">
-        <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
-          Eligible Participants Without Plans
-        </h2>
-        
-        {loadingEligible && (
-          <p className="text-[var(--glass-gray-medium)] py-4">
-            Loading eligible participants...
-          </p>
-        )}
-
-        {errorEligible && (
-          <p className="text-red-500 py-4">
-            Error: {errorEligible}
-          </p>
-        )}
-
-        {!loadingEligible && !errorEligible && eligibleWithoutPlans.length === 0 && (
-          <p className="text-[var(--glass-gray-medium)] py-4">
-            No eligible participants without active plans found.
-          </p>
-        )}
-
-        {!loadingEligible && !errorEligible && eligibleWithoutPlans.length > 0 && (
-          <div className="space-y-4">
-            {eligibleWithoutPlans.map((participant) => (
-              <div
-                key={participant.id}
-                className="p-4 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 transition-all cursor-pointer"
-                onClick={() => router.push(`/participants/${participant.id}`)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-[var(--glass-black-dark)] mb-1">
-                      {participant.client_name}
-                    </h3>
-                    <div className="flex flex-wrap gap-4 text-sm text-[var(--glass-gray-medium)]">
-                      <span>
-                        Group: <span className="text-[var(--glass-black-dark)]">{participant.group_name}</span>
-                      </span>
-                      {participant.class_number && (
-                        <span>
-                          Class: <span className="text-[var(--glass-black-dark)]">{participant.class_number}</span>
-                        </span>
-                      )}
-                      {participant.hire_date && (
-                        <span>
-                          Hire Date: <span className="text-[var(--glass-black-dark)]">{formatDate(new Date(participant.hire_date))}</span>
-                        </span>
-                      )}
-                      {participant.eligibility_start_date && (
-                        <span>
-                          Eligibility Started: <span className="text-[var(--glass-black-dark)]">{formatDate(participant.eligibility_start_date)}</span>
-                        </span>
-                      )}
                       {participant.email_address && (
                         <span>
                           Email: <span className="text-[var(--glass-black-dark)]">{participant.email_address}</span>

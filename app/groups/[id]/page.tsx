@@ -136,7 +136,7 @@ export default function GroupDetailPage() {
   const [renewalPlansDropdownOpen, setRenewalPlansDropdownOpen] = useState(false);
   const renewalPlansDropdownRef = useRef<HTMLDivElement>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
-    'group-information': true,
+    'group-information': false,
     'plans': true,
     'participants': true,
     'renewal': true,

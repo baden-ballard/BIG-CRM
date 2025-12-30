@@ -267,7 +267,7 @@ export default function ResetPasswordPage() {
     );
   }
   
-  if (!isValidSession && !token_hash) {
+  if (!isValidSession) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8">
         <div className="w-full max-w-md">
