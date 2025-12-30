@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '../../../../lib/supabase-server';
 
 export async function GET(request: NextRequest) {
+  const userAgent = request.headers.get('user-agent') || '';
+  
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:6',message:'API route entry',data:{url:request.url,method:request.method,userAgent:request.headers.get('user-agent')?.substring(0,50)||null,referer:request.headers.get('referer')||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:6',message:'API route entry',data:{url:request.url,method:request.method,userAgent:userAgent.substring(0,100)||null,referer:request.headers.get('referer')||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   // #endregion
 
   const { searchParams } = new URL(request.url);
