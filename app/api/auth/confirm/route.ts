@@ -2,6 +2,92 @@ import { type EmailOtpType } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '../../../../lib/supabase-server';
 
+// POST handler for token verification (prevents email prefetching)
+export async function POST(request: NextRequest) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:8',message:'POST route entry - token verification',data:{method:'POST'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+
+  try {
+    const body = await request.json();
+    const { token_hash, type, next } = body;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:15',message:'POST body parsed',data:{hasTokenHash:!!token_hash,token_hash_length:token_hash?.length||0,type,next},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
+    if (!token_hash || !type) {
+      return NextResponse.json(
+        { error: 'Missing token_hash or type' },
+        { status: 400 }
+      );
+    }
+
+    const redirectTo = new URL(next || '/reset-password', request.url);
+    
+    // Create response first so we can set cookies in it
+    const response = NextResponse.json({ success: true, redirect: redirectTo.pathname });
+    const supabase = await createServerSupabaseClient(response);
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:30',message:'Before verifyOtp call (POST)',data:{type,token_hash_length:token_hash?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    
+    // Verify the OTP
+    const { data: verifyData, error } = await supabase.auth.verifyOtp({
+      type: type as EmailOtpType,
+      token_hash,
+    });
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:38',message:'After verifyOtp call (POST)',data:{hasError:!!error,errorMessage:error?.message,errorStatus:error?.status,errorCode:error?.code,hasSession:!!verifyData?.session},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E'})}).catch(()=>{});
+    // #endregion
+
+    if (error) {
+      console.error('OTP verification error (POST):', error);
+      return NextResponse.json(
+        { 
+          error: 'invalid_token',
+          error_detail: `${error.message} (Status: ${error.status || 'N/A'}, Code: ${error.code || 'N/A'})`
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!verifyData?.session) {
+      // Try to get session explicitly
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:55',message:'getSession result (POST)',data:{hasSession:!!session,hasSessionError:!!sessionError},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      
+      if (!session) {
+        return NextResponse.json(
+          { error: 'session_failed', error_detail: 'Session not created after OTP verification' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Success - return redirect URL
+    return NextResponse.json({ 
+      success: true, 
+      redirect: redirectTo.pathname 
+    });
+  } catch (error: any) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:70',message:'Exception in POST handler',data:{errorMessage:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    console.error('Exception in POST handler:', error);
+    return NextResponse.json(
+      { error: 'verification_failed', error_detail: error?.message || 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
+
+// GET handler - redirects to confirmation page (prevents email prefetching)
 export async function GET(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || '';
   
