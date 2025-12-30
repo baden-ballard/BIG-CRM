@@ -207,7 +207,7 @@ export default function UserDetailPage() {
           </div>
           {!isEditing && (
             <div className="flex gap-3">
-              <GlassButton variant="secondary" onClick={() => setIsEditing(true)}>
+              <GlassButton variant="outline" onClick={() => setIsEditing(true)}>
                 Edit
               </GlassButton>
               <button
