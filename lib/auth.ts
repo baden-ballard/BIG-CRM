@@ -60,3 +60,37 @@ export function onAuthStateChange(callback: (user: User | null) => void) {
   });
 }
 
+/**
+ * Send password reset email
+ */
+export async function resetPasswordForEmail(email: string, redirectTo?: string) {
+  // Get the origin from window if available (client-side), otherwise use a default
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const defaultRedirectTo = redirectTo || `${origin}/api/auth/confirm?next=/reset-password`;
+
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: defaultRedirectTo,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * Update user password
+ */
+export async function updatePassword(newPassword: string) {
+  const { data, error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+

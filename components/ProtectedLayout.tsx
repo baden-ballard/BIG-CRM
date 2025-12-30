@@ -19,14 +19,18 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
       return;
     }
 
-    // If on login page and already authenticated, redirect to home
-    if (pathname === '/login' && user) {
+    // Public pages that don't require authentication
+    const publicPages = ['/login', '/forgot-password', '/reset-password'];
+    const isPublicPage = publicPages.includes(pathname);
+
+    // If on public page and already authenticated, redirect to home
+    if (isPublicPage && user) {
       router.push('/');
       return;
     }
 
-    // If not on login page and not authenticated, redirect to login
-    if (pathname !== '/login' && !user) {
+    // If not on public page and not authenticated, redirect to login
+    if (!isPublicPage && !user) {
       router.push('/login');
     }
   }, [user, loading, router, pathname]);
@@ -43,8 +47,12 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
     );
   }
 
+  // Public pages that don't require authentication
+  const publicPages = ['/login', '/forgot-password', '/reset-password'];
+  const isPublicPage = publicPages.includes(pathname);
+
   // Don't render protected content if not authenticated (will redirect)
-  if (!user && pathname !== '/login') {
+  if (!user && !isPublicPage) {
     return null;
   }
 

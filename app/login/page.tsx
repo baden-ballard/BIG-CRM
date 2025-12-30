@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import GlassCard from '../../components/GlassCard';
 import GlassButton from '../../components/GlassButton';
 import { signIn } from '../../lib/auth';
@@ -96,6 +97,15 @@ export default function LoginPage() {
               {loading ? 'Signing in...' : 'Sign In'}
             </GlassButton>
           </form>
+
+          <div className="mt-6 text-center">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-[var(--glass-secondary)] hover:text-[var(--glass-secondary-dark)] transition-colors"
+            >
+              Forgot your password?
+            </Link>
+          </div>
         </GlassCard>
       </div>
     </div>
