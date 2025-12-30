@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from '../../../../lib/supabase-server';
 
 export async function GET(request: NextRequest) {
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:6',message:'API route entry',data:{url:request.url,method:request.method},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:6',message:'API route entry',data:{url:request.url,method:request.method,userAgent:request.headers.get('user-agent')?.substring(0,50)||null,referer:request.headers.get('referer')||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   // #endregion
 
   const { searchParams } = new URL(request.url);
@@ -23,11 +23,15 @@ export async function GET(request: NextRequest) {
     token_hash = searchParams.get('token_hash');
   }
   
+  // Also try decoded version in case email client double-encoded it
+  const token_hash_decoded = token_hash ? decodeURIComponent(token_hash) : null;
+  const token_hash_from_params = searchParams.get('token_hash');
+  
   const type = searchParams.get('type') as EmailOtpType | null;
   const next = searchParams.get('next') ?? '/reset-password';
 
   // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:18',message:'Query params parsed',data:{token_hash_present:!!token_hash,token_hash_length:token_hash?.length||0,token_hash_preview:token_hash?.substring(0,30)||null,type,next,allParams:Object.fromEntries(searchParams)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:25',message:'Query params parsed',data:{token_hash_present:!!token_hash,token_hash_length:token_hash?.length||0,token_hash_preview:token_hash?.substring(0,30)||null,token_hash_end:token_hash?.substring(Math.max(0,token_hash.length-30))||null,token_hash_from_params_present:!!token_hash_from_params,token_hash_from_params_length:token_hash_from_params?.length||0,token_hash_decoded_length:token_hash_decoded?.length||0,token_hash_has_percent:token_hash?.includes('%')||false,type,next,allParams:Object.fromEntries(searchParams)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,C'})}).catch(()=>{});
   // #endregion
 
   console.log('Password reset confirmation:', {
@@ -62,15 +66,40 @@ export async function GET(request: NextRequest) {
       console.log('Verifying OTP with type:', type, 'token_hash length:', token_hash?.length);
       
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:42',message:'Before verifyOtp call',data:{type,token_hash_length:token_hash?.length||0,token_hash_start:token_hash?.substring(0,20)||null,token_hash_end:token_hash?.substring(token_hash.length-20)||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:70',message:'Before verifyOtp call',data:{type,token_hash_length:token_hash?.length||0,token_hash_start:token_hash?.substring(0,30)||null,token_hash_end:token_hash?.substring(Math.max(0,token_hash.length-30))||null,token_hash_has_special_chars:token_hash ? /[^a-zA-Z0-9\-_]/g.test(token_hash) : false,using_decoded:false},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
       // #endregion
       
       // Verify the OTP - this should create a session for password recovery
       // For recovery type, verifyOtp creates a temporary recovery session
-      const { data: verifyData, error } = await supabase.auth.verifyOtp({
+      let verifyData: any = null;
+      let error: any = null;
+      
+      // Try with original token_hash first
+      const verifyResult = await supabase.auth.verifyOtp({
         type,
         token_hash,
       });
+      verifyData = verifyResult.data;
+      error = verifyResult.error;
+      
+      // If that fails and we have a decoded version, try that
+      if (error && token_hash_decoded && token_hash_decoded !== token_hash) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:82',message:'First verifyOtp failed, trying decoded token_hash',data:{firstError:error?.message,firstErrorStatus:error?.status,token_hash_decoded_length:token_hash_decoded?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        const verifyResult2 = await supabase.auth.verifyOtp({
+          type,
+          token_hash: token_hash_decoded,
+        });
+        if (!verifyResult2.error) {
+          verifyData = verifyResult2.data;
+          error = verifyResult2.error;
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:90',message:'Decoded token_hash worked',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
+        }
+      }
 
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:68',message:'After verifyOtp call',data:{hasError:!!error,errorMessage:error?.message,errorStatus:error?.status,errorName:error?.name,errorCode:error?.code,hasSession:!!verifyData?.session,hasUser:!!verifyData?.user,userId:verifyData?.user?.id||null,sessionAccessToken:verifyData?.session?.access_token?.substring(0,20)||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E'})}).catch(()=>{});
