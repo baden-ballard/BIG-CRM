@@ -19,15 +19,14 @@ export default function ResetPasswordPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
-    // Check if we have token_hash and type in URL (from email prefetch protection)
-    const token_hash = searchParams.get('token_hash');
-    const type = searchParams.get('type');
+    // Check if we need to show confirmation button
     const confirm = searchParams.get('confirm');
+    const type = searchParams.get('type');
     const next = searchParams.get('next') || '/reset-password';
     
-    // If we have token_hash and confirm flag, show confirmation button instead of auto-verifying
+    // If confirm flag is set, we need to get token_hash from cookie (not URL)
     // This prevents email prefetching from consuming the token
-    if (token_hash && type && confirm === 'true') {
+    if (confirm === 'true' && type) {
       // Don't auto-verify - wait for user to click button
       setCheckingSession(false);
       setIsValidSession(false); // Will be set to true after button click
@@ -154,28 +153,29 @@ export default function ResetPasswordPage() {
     );
   }
 
-  // Show confirmation page if we have token_hash but haven't verified yet
-  const token_hash = searchParams.get('token_hash');
-  const type = searchParams.get('type');
+  // Show confirmation page if we have confirm flag but haven't verified yet
   const confirm = searchParams.get('confirm');
+  const type = searchParams.get('type');
   const next = searchParams.get('next') || '/reset-password';
   
   // Handle token verification when user clicks the button
   // Use POST request to prevent email prefetching
+  // Token is stored in httpOnly cookie, not URL
   const handleVerifyToken = async () => {
-    if (!token_hash || !type) return;
+    if (!type) return;
     
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:165',message:'Button clicked - starting verification',data:{token_hash_length:token_hash?.length||0,type,hasTokenHash:!!token_hash},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:165',message:'Button clicked - starting verification',data:{type,hasType:!!type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
     
     setCheckingSession(true);
     setError(null);
     
     try {
-      // Use POST request instead of GET to prevent email prefetching
+      // Use POST request - token_hash is in httpOnly cookie, not request body
+      // This prevents email prefetching from accessing the token
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:175',message:'Calling verify API via POST',data:{token_hash_preview:token_hash?.substring(0,30),type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:175',message:'Calling verify API via POST (token in cookie)',data:{type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
       
       const response = await fetch('/api/auth/confirm', {
@@ -184,10 +184,11 @@ export default function ResetPasswordPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          token_hash,
+          // Don't send token_hash - it's in httpOnly cookie
           type,
           next,
         }),
+        credentials: 'include', // Include cookies
       });
       
       const data = await response.json();
@@ -225,8 +226,8 @@ export default function ResetPasswordPage() {
     }
   };
   
-  // Show confirmation button if we have token_hash but haven't verified
-  if (token_hash && type && confirm === 'true' && !isValidSession) {
+  // Show confirmation button if we have confirm flag but haven't verified
+  if (confirm === 'true' && type && !isValidSession) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8">
         <div className="w-full max-w-md">

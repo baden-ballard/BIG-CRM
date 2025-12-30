@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '../../../../lib/supabase-server';
 
 // POST handler for token verification (prevents email prefetching)
+// Token is stored in httpOnly cookie, not request body
 export async function POST(request: NextRequest) {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:8',message:'POST route entry - token verification',data:{method:'POST'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
@@ -10,15 +11,19 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { token_hash, type, next } = body;
+    const { type, next } = body;
+    
+    // Get token_hash from httpOnly cookie (set during GET redirect)
+    const cookieStore = await import('next/headers').then(m => m.cookies());
+    const token_hash = cookieStore.get('reset_token_hash')?.value;
     
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:15',message:'POST body parsed',data:{hasTokenHash:!!token_hash,token_hash_length:token_hash?.length||0,type,next},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:18',message:'POST body parsed - token from cookie',data:{hasTokenHash:!!token_hash,token_hash_length:token_hash?.length||0,type,next},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
 
     if (!token_hash || !type) {
       return NextResponse.json(
-        { error: 'Missing token_hash or type' },
+        { error: 'Missing token_hash or type', error_detail: 'Token not found in cookie. Please request a new password reset.' },
         { status: 400 }
       );
     }
@@ -70,11 +75,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Success - return redirect URL
-    return NextResponse.json({ 
+    // Success - return redirect URL and clear the token cookie
+    const successResponse = NextResponse.json({ 
       success: true, 
       redirect: redirectTo.pathname 
     });
+    
+    // Clear the token cookie after successful verification
+    successResponse.cookies.delete('reset_token_hash');
+    
+    return successResponse;
   } catch (error: any) {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:70',message:'Exception in POST handler',data:{errorMessage:error?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
@@ -140,22 +150,33 @@ export async function GET(request: NextRequest) {
   
   // If we have token_hash but NOT a direct verify request, redirect to confirmation page
   // This prevents email prefetching from consuming the OTP token
+  // CRITICAL: We cannot include token_hash in the redirect URL because email clients
+  // will prefetch the redirect URL itself, consuming the token
+  // Instead, we'll use a temporary session-based approach
   if (token_hash && type && !isDirectVerify) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:58',message:'Redirecting to confirmation page to prevent email prefetch',data:{userAgent:userAgent.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:58',message:'Redirecting to confirmation page - storing token in cookie',data:{userAgent:userAgent.substring(0,50),token_hash_length:token_hash.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
     // #endregion
     
-    // Redirect to confirmation page - user must click button to verify
-    // IMPORTANT: Don't include token_hash in redirect URL to prevent it from being consumed
+    // Store token_hash in a secure httpOnly cookie instead of URL
+    // This prevents email prefetching from accessing it
     const confirmUrl = request.nextUrl.clone();
     confirmUrl.pathname = '/reset-password';
-    // Store token_hash in sessionStorage via a data attribute or pass it differently
-    // Actually, we need to pass it - but encode it properly
-    confirmUrl.searchParams.set('token_hash', token_hash);
-    confirmUrl.searchParams.set('type', type);
-    confirmUrl.searchParams.set('next', next);
     confirmUrl.searchParams.set('confirm', 'true');
-    return NextResponse.redirect(confirmUrl);
+    confirmUrl.searchParams.set('type', type);
+    // Don't include token_hash in URL - store it in cookie instead
+    const response = NextResponse.redirect(confirmUrl);
+    
+    // Store token_hash in a secure cookie (httpOnly, sameSite, maxAge 5 minutes)
+    response.cookies.set('reset_token_hash', token_hash, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 5, // 5 minutes
+      path: '/',
+    });
+    
+    return response;
   }
 
   const redirectTo = request.nextUrl.clone();
