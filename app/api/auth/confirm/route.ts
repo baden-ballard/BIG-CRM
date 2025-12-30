@@ -66,13 +66,14 @@ export async function GET(request: NextRequest) {
       // #endregion
       
       // Verify the OTP - this should create a session for password recovery
+      // For recovery type, verifyOtp creates a temporary recovery session
       const { data: verifyData, error } = await supabase.auth.verifyOtp({
         type,
         token_hash,
       });
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:50',message:'After verifyOtp call',data:{hasError:!!error,errorMessage:error?.message,errorStatus:error?.status,errorName:error?.name,hasSession:!!verifyData?.session,hasUser:!!verifyData?.user,userId:verifyData?.user?.id||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:68',message:'After verifyOtp call',data:{hasError:!!error,errorMessage:error?.message,errorStatus:error?.status,errorName:error?.name,errorCode:error?.code,hasSession:!!verifyData?.session,hasUser:!!verifyData?.user,userId:verifyData?.user?.id||null,sessionAccessToken:verifyData?.session?.access_token?.substring(0,20)||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D,E'})}).catch(()=>{});
       // #endregion
 
       console.log('OTP verification result:', {
