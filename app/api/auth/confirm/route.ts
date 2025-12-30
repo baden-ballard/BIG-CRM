@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
     const { type, next } = body;
     
     // Get token_hash from httpOnly cookie (set during GET redirect)
-    const cookieStore = await import('next/headers').then(m => m.cookies());
+    const { cookies } = await import('next/headers');
+    const cookieStore = await cookies();
     const token_hash = cookieStore.get('reset_token_hash')?.value;
     
     // #region agent log
