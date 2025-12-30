@@ -29,6 +29,8 @@ export default function ResetPasswordPage() {
         errorMessage = 'Token verification failed. Please request a new password reset.';
       } else if (errorParam === 'missing_token') {
         errorMessage = 'Reset token is missing. Please request a new password reset.';
+      } else if (errorParam === 'session_failed') {
+        errorMessage = 'Session creation failed. Please request a new password reset.';
       }
       setError(errorMessage);
       setCheckingSession(false);
@@ -36,22 +38,52 @@ export default function ResetPasswordPage() {
     }
 
     // Check if user has a valid session (from password recovery token)
-    const checkSession = async () => {
+    // Add a small delay to ensure cookies are available after redirect
+    let interval: NodeJS.Timeout | null = null;
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    const tryGetSession = async (): Promise<boolean> => {
       try {
         const session = await getSession();
         if (session) {
           setIsValidSession(true);
-        } else {
-          setError('Invalid or expired reset link. Please request a new password reset.');
+          setCheckingSession(false);
+          return true;
         }
+        return false;
       } catch (err) {
-        setError('Invalid or expired reset link. Please request a new password reset.');
-      } finally {
-        setCheckingSession(false);
+        console.error('Error checking session:', err);
+        return false;
       }
     };
 
+    const checkSession = async () => {
+      // Try immediately
+      if (await tryGetSession()) {
+        return;
+      }
+
+      // Retry with delays
+      interval = setInterval(async () => {
+        attempts++;
+        const found = await tryGetSession();
+        if (found || attempts >= maxAttempts) {
+          if (interval) clearInterval(interval);
+          if (attempts >= maxAttempts && !found) {
+            setError('Invalid or expired reset link. Please request a new password reset.');
+            setCheckingSession(false);
+          }
+        }
+      }, 500); // Check every 500ms
+    };
+
     checkSession();
+
+    // Cleanup on unmount
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [searchParams]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {

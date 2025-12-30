@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
 // Try NEXT_PUBLIC_ prefixed vars first (for client-side), then fall back to non-prefixed
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
@@ -36,22 +36,10 @@ if (!supabaseAnonKey || supabaseAnonKey === '' || supabaseAnonKey.includes('plac
   console.warn('API key starts with quotes. Remove quotes from your .env file.');
 }
 
-// Create client - will throw error if env vars are missing
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase is not configured. Please check your environment variables.');
-  console.error('   Required variables: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  console.error('   Or alternatively: SUPABASE_URL and SUPABASE_KEY');
-}
-
-export const supabase = createClient(
+// Create browser client using @supabase/ssr for proper cookie handling
+// This ensures cookies set by server-side routes are properly read
+export const supabase = createBrowserClient(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key',
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  }
+  supabaseAnonKey || 'placeholder-key'
 );
 
