@@ -19,6 +19,21 @@ export default function ResetPasswordPage() {
   const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
+    // Check if we have token_hash and type in URL (from email prefetch protection)
+    const token_hash = searchParams.get('token_hash');
+    const type = searchParams.get('type');
+    const confirm = searchParams.get('confirm');
+    const next = searchParams.get('next') || '/reset-password';
+    
+    // If we have token_hash and confirm flag, show confirmation button instead of auto-verifying
+    // This prevents email prefetching from consuming the token
+    if (token_hash && type && confirm === 'true') {
+      // Don't auto-verify - wait for user to click button
+      setCheckingSession(false);
+      setIsValidSession(false); // Will be set to true after button click
+      return;
+    }
+    
     // Check for error query parameter from API route
     const errorParam = searchParams.get('error');
     const errorDetail = searchParams.get('error_detail');
@@ -139,7 +154,88 @@ export default function ResetPasswordPage() {
     );
   }
 
-  if (!isValidSession) {
+  // Show confirmation page if we have token_hash but haven't verified yet
+  const token_hash = searchParams.get('token_hash');
+  const type = searchParams.get('type');
+  const confirm = searchParams.get('confirm');
+  const next = searchParams.get('next') || '/reset-password';
+  
+  // Handle token verification when user clicks the button
+  const handleVerifyToken = async () => {
+    if (!token_hash || !type) return;
+    
+    setCheckingSession(true);
+    setError(null);
+    
+    try {
+      // Call API route with verify=true flag to actually verify the token
+      const verifyUrl = `/api/auth/confirm?token_hash=${encodeURIComponent(token_hash)}&type=${type}&next=${encodeURIComponent(next)}&verify=true`;
+      const response = await fetch(verifyUrl);
+      
+      if (response.redirected) {
+        // Success - follow redirect to reset password page with session
+        window.location.href = response.url;
+      } else {
+        // Error - parse error from redirect
+        const url = new URL(response.url);
+        const errorParam = url.searchParams.get('error');
+        const errorDetail = url.searchParams.get('error_detail');
+        let errorMessage = 'Token verification failed. Please request a new password reset.';
+        if (errorDetail) {
+          errorMessage += ` (${decodeURIComponent(errorDetail)})`;
+        }
+        setError(errorMessage);
+        setCheckingSession(false);
+      }
+    } catch (err: any) {
+      console.error('Error verifying token:', err);
+      setError('Token verification failed. Please request a new password reset.');
+      setCheckingSession(false);
+    }
+  };
+  
+  // Show confirmation button if we have token_hash but haven't verified
+  if (token_hash && type && confirm === 'true' && !isValidSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <GlassCard>
+            <div className="text-center mb-8">
+              <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
+                Reset Password
+              </h1>
+              <p className="text-[var(--glass-gray-medium)] mb-6">
+                Click the button below to verify your password reset link
+              </p>
+              {error && (
+                <div className="mb-6 p-4 rounded-lg bg-red-500/20 border border-red-500/50">
+                  <p className="text-red-600 text-sm">{error}</p>
+                </div>
+              )}
+              <GlassButton
+                onClick={handleVerifyToken}
+                variant="primary"
+                className="w-full"
+                disabled={checkingSession}
+              >
+                {checkingSession ? 'Verifying...' : 'Verify Reset Link'}
+              </GlassButton>
+              <div className="mt-4">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-[var(--glass-secondary)] hover:text-[var(--glass-secondary-dark)] transition-colors"
+                >
+                  Request New Reset Link
+                </Link>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isValidSession && !token_hash) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8">
         <div className="w-full max-w-md">

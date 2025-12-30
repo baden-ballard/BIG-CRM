@@ -43,13 +43,34 @@ export async function GET(request: NextRequest) {
     has_type: !!type,
   });
 
+  // Check if this is a direct verification request (from button click) or email link
+  const isDirectVerify = searchParams.get('verify') === 'true';
+  
+  // If we have token_hash but NOT a direct verify request, redirect to confirmation page
+  // This prevents email prefetching from consuming the OTP token
+  if (token_hash && type && !isDirectVerify) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:50',message:'Redirecting to confirmation page to prevent email prefetch',data:{userAgent:userAgent.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    // Redirect to confirmation page - user must click button to verify
+    const confirmUrl = request.nextUrl.clone();
+    confirmUrl.pathname = '/reset-password';
+    confirmUrl.searchParams.set('token_hash', token_hash);
+    confirmUrl.searchParams.set('type', type);
+    confirmUrl.searchParams.set('next', next);
+    confirmUrl.searchParams.set('confirm', 'true');
+    return NextResponse.redirect(confirmUrl);
+  }
+
   const redirectTo = request.nextUrl.clone();
   redirectTo.pathname = next;
   redirectTo.searchParams.delete('token_hash');
   redirectTo.searchParams.delete('type');
   redirectTo.searchParams.delete('next');
+  redirectTo.searchParams.delete('verify');
 
-  if (token_hash && type) {
+  if (token_hash && type && isDirectVerify) {
     try {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:32',message:'Before Supabase client creation',data:{hasTokenHash:!!token_hash,hasType:!!type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
