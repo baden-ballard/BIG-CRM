@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import '../styles/glassmorphic.css';
-import Sidebar from '../components/Sidebar';
+import { AuthProvider } from '../components/AuthProvider';
+import ProtectedLayout from '../components/ProtectedLayout';
+import AppLayout from '../components/AppLayout';
 
 export const metadata: Metadata = {
   title: 'BIG CRM - Sales Pipeline & Account Management',
@@ -15,6 +17,7 @@ const navItems = [
   { href: '/participants', label: 'Participants' },
   { href: '/programs', label: 'Programs' },
   { href: '/providers', label: 'Providers' },
+  { href: '/users', label: 'Users' },
   { href: '/participant-group-plan-rates', label: 'Participant Group Plan Rates' },
   { href: '/group-plan-options-rate-history', label: 'Group Plan Options Rate History' },
 ];
@@ -27,14 +30,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen relative">
-        <div className="flex h-screen">
-          <Sidebar items={navItems} />
-          <main className="flex-1 ml-64 overflow-y-auto">
-            <div className="p-8">
+        <AuthProvider>
+          <ProtectedLayout>
+            <AppLayout navItems={navItems}>
               {children}
-            </div>
-          </main>
-        </div>
+            </AppLayout>
+          </ProtectedLayout>
+        </AuthProvider>
       </body>
     </html>
   );

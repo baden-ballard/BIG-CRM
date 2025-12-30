@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useAuth } from './AuthProvider';
+import { signOut } from '../lib/auth';
 
 interface NavItem {
   href: string;
@@ -16,12 +18,24 @@ interface SidebarProps {
 
 export default function Sidebar({ items }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user } = useAuth();
 
   const isActive = (href: string) => {
     if (href === '/') {
       return pathname === '/';
     }
     return pathname?.startsWith(href);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.push('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   return (
@@ -72,6 +86,24 @@ export default function Sidebar({ items }: SidebarProps) {
             );
           })}
         </nav>
+
+        {/* User Info and Logout */}
+        <div className="pt-6 border-t border-white/20">
+          {user && (
+            <div className="mb-4 px-4 py-2">
+              <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Signed in as</p>
+              <p className="text-sm font-semibold text-[var(--glass-black-dark)] truncate">
+                {user.email}
+              </p>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="w-full px-4 py-3 rounded-xl font-semibold text-sm text-[var(--glass-black-dark)] hover:bg-white/20 hover:text-red-600 transition-colors duration-200 text-left"
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
     </aside>
   );

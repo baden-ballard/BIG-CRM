@@ -442,9 +442,14 @@ export default function ParticipantsPage() {
             Manage individual clients and participants
           </p>
         </div>
-        <GlassButton variant="primary" href="/participants/new">
-          + New Participant
-        </GlassButton>
+        <div className="flex gap-3">
+          <GlassButton variant="primary" href="/participants/new">
+            + New Participant
+          </GlassButton>
+          <GlassButton variant="primary" href="/participants/upload-medicare">
+            Upload Medicare Participants
+          </GlassButton>
+        </div>
       </div>
 
       {loading && (

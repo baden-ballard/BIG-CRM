@@ -1567,13 +1567,22 @@ export default function GroupDetailPage() {
                 <span>Participants</span>
               </button>
               {!collapsedSections['participants'] && (
-                <GlassButton
-                  variant="primary"
-                  type="button"
-                  onClick={() => router.push(`/participants/new?group_id=${groupId}`)}
-                >
-                  + Add Participant
-                </GlassButton>
+                <div className="flex gap-3">
+                  <GlassButton
+                    variant="primary"
+                    type="button"
+                    onClick={() => router.push(`/participants/new?group_id=${groupId}`)}
+                  >
+                    + Add Participant
+                  </GlassButton>
+                  <GlassButton
+                    variant="primary"
+                    type="button"
+                    onClick={() => router.push(`/groups/${groupId}/upload-participants`)}
+                  >
+                    Upload Participants
+                  </GlassButton>
+                </div>
               )}
             </div>
 
