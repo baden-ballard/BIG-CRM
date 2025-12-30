@@ -21,12 +21,19 @@ export default function ResetPasswordPage() {
   useEffect(() => {
     // Check for error query parameter from API route
     const errorParam = searchParams.get('error');
+    const errorDetail = searchParams.get('error_detail');
     if (errorParam) {
       let errorMessage = 'Invalid or expired reset link. Please request a new password reset.';
       if (errorParam === 'invalid_token') {
         errorMessage = 'Invalid reset token. Please request a new password reset.';
+        if (errorDetail) {
+          errorMessage += ` (Details: ${decodeURIComponent(errorDetail)})`;
+        }
       } else if (errorParam === 'verification_failed') {
         errorMessage = 'Token verification failed. Please request a new password reset.';
+        if (errorDetail) {
+          errorMessage += ` (Details: ${decodeURIComponent(errorDetail)})`;
+        }
       } else if (errorParam === 'missing_token') {
         errorMessage = 'Reset token is missing. Please request a new password reset.';
       } else if (errorParam === 'session_failed') {

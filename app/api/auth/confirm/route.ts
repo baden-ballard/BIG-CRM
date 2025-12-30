@@ -149,17 +149,20 @@ export async function GET(request: NextRequest) {
         }
       } else {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:85',message:'Error path - verifyOtp failed',data:{errorMessage:error?.message,errorStatus:error?.status,errorName:error?.name,fullError:JSON.stringify(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/api/auth/confirm/route.ts:120',message:'Error path - verifyOtp failed',data:{errorMessage:error?.message,errorStatus:error?.status,errorName:error?.name,errorCode:error?.code,fullError:JSON.stringify(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
         // #endregion
         console.error('OTP verification error:', {
           message: error?.message,
           status: error?.status,
           name: error?.name,
+          code: error?.code,
         });
         // Redirect to error page or reset password page with error
+        // Include detailed error info for debugging
         redirectTo.pathname = '/reset-password';
         redirectTo.searchParams.set('error', 'invalid_token');
-        redirectTo.searchParams.set('error_detail', encodeURIComponent(error?.message || 'Unknown error'));
+        const errorDetail = `${error?.message || 'Unknown error'} (Status: ${error?.status || 'N/A'}, Code: ${error?.code || 'N/A'})`;
+        redirectTo.searchParams.set('error_detail', encodeURIComponent(errorDetail));
         return NextResponse.redirect(redirectTo);
       }
     } catch (error: any) {
