@@ -164,22 +164,44 @@ export default function ResetPasswordPage() {
   const handleVerifyToken = async () => {
     if (!token_hash || !type) return;
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:165',message:'Button clicked - starting verification',data:{token_hash_length:token_hash?.length||0,type,hasTokenHash:!!token_hash},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     setCheckingSession(true);
     setError(null);
     
     try {
       // Call API route with verify=true flag to actually verify the token
       const verifyUrl = `/api/auth/confirm?token_hash=${encodeURIComponent(token_hash)}&type=${type}&next=${encodeURIComponent(next)}&verify=true`;
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:175',message:'Calling verify API',data:{verifyUrl,token_hash_preview:token_hash?.substring(0,30)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       const response = await fetch(verifyUrl);
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:180',message:'Verify API response received',data:{status:response.status,redirected:response.redirected,responseUrl:response.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       
       if (response.redirected) {
         // Success - follow redirect to reset password page with session
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:185',message:'Redirecting after successful verification',data:{redirectUrl:response.url},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         window.location.href = response.url;
       } else {
-        // Error - parse error from redirect
-        const url = new URL(response.url);
+        // Error - check if response URL has error params
+        const responseUrl = response.url;
+        const url = new URL(responseUrl);
         const errorParam = url.searchParams.get('error');
         const errorDetail = url.searchParams.get('error_detail');
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:195',message:'Verification failed',data:{errorParam,errorDetail,responseStatus:response.status,responseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        
         let errorMessage = 'Token verification failed. Please request a new password reset.';
         if (errorDetail) {
           errorMessage += ` (${decodeURIComponent(errorDetail)})`;
@@ -188,6 +210,9 @@ export default function ResetPasswordPage() {
         setCheckingSession(false);
       }
     } catch (err: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/3a6a5ac4-a463-4d1c-82bb-202cb212287a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/reset-password/page.tsx:205',message:'Exception during verification',data:{errorMessage:err?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
       console.error('Error verifying token:', err);
       setError('Token verification failed. Please request a new password reset.');
       setCheckingSession(false);
