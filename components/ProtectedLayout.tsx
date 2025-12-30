@@ -24,7 +24,8 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
     const isPublicPage = publicPages.includes(pathname);
 
     // If on public page and already authenticated, redirect to home
-    if (isPublicPage && user) {
+    // EXCEPT for /reset-password - users need to be authenticated to reset password
+    if (isPublicPage && user && pathname !== '/reset-password') {
       router.push('/');
       return;
     }
