@@ -13,8 +13,8 @@ export const metadata: Metadata = {
 const navItems = [
   { href: '/', label: 'Dashboard' },
   { href: '/groups', label: 'Groups' },
+  { href: '/participants', label: 'Medicare/Member Search' },
   { href: '/medicare-plans', label: 'Medicare Plans' },
-  { href: '/participants', label: 'Participants' },
   { href: '/programs', label: 'Programs' },
   { href: '/providers', label: 'Providers' },
   { href: '/users', label: 'Users' },

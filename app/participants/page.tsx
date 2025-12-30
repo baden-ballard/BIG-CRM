@@ -436,10 +436,10 @@ export default function ParticipantsPage() {
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-4xl font-bold text-[var(--glass-black-dark)] mb-2">
-            Participants
+            Medicare/Member Search
           </h1>
           <p className="text-[var(--glass-gray-medium)]">
-            Manage individual clients and participants
+            Search for Medicare Clients and Group Members
           </p>
         </div>
         <div className="flex gap-3">
