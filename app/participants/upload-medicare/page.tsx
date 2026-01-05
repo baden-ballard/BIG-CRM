@@ -91,6 +91,7 @@ export default function UploadMedicareParticipantsPage() {
         const normalizedH = h.replace(/^"|"$/g, '').trim();
         return normalizedH === expected || normalizedH === expected.replace(/\s+/g, '');
       });
+      
       if (index === -1) {
         throw new Error(`Missing required column: ${expected}`);
       }
@@ -150,12 +151,19 @@ export default function UploadMedicareParticipantsPage() {
     setUploadStatus(null);
 
     try {
-      // Read CSV file
-      const csvText = await csvFile.text();
-      const rows = parseCSV(csvText);
+      const fileName = csvFile.name.toLowerCase();
+      const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+      const isCSV = fileName.endsWith('.csv') || csvFile.type === 'text/csv';
+      
+      // Only validate CSV files client-side; Excel files are handled by the server
+      if (isCSV) {
+        // Read CSV file
+        const csvText = await csvFile.text();
+        const rows = parseCSV(csvText);
 
-      if (rows.length === 0) {
-        throw new Error('No data rows found in CSV');
+        if (rows.length === 0) {
+          throw new Error('No data rows found in CSV');
+        }
       }
 
       // Process upload via API

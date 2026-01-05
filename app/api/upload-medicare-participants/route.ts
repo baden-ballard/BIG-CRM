@@ -53,10 +53,15 @@ function parseCSV(csvText: string): CSVRow[] {
     throw new Error('CSV must have at least a header row and one data row');
   }
 
-  // Parse header row
-  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/^"|"$/g, ''));
+  // Parse header row - normalize headers by lowercasing and normalizing whitespace
+  const rawHeaders = parseCSVLine(lines[0]);
+  const headers = rawHeaders.map(h => {
+    const str = h.replace(/^"|"$/g, '').trim();
+    // Normalize whitespace: replace multiple spaces with single space, then lowercase
+    return str.replace(/\s+/g, ' ').toLowerCase();
+  });
   
-  // Expected headers (case-insensitive)
+  // Expected headers (case-insensitive, normalized)
   const expectedHeaders = [
     'participant',
     'date of birth',
@@ -70,15 +75,25 @@ function parseCSV(csvText: string): CSVRow[] {
     'rate'
   ];
 
+  // Helper function to normalize header for comparison
+  const normalizeHeader = (header: string): string => {
+    return header.replace(/\s+/g, ' ').toLowerCase().trim();
+  };
+
   // Map headers to indices
   const headerMap: Record<string, number> = {};
   expectedHeaders.forEach(expected => {
+    const normalizedExpected = normalizeHeader(expected);
     const index = headers.findIndex(h => {
-      const normalizedH = h.replace(/^"|"$/g, '').trim();
-      return normalizedH === expected || normalizedH === expected.replace(/\s+/g, '');
+      const normalizedH = normalizeHeader(String(h || ''));
+      // Match exact or with spaces removed (for cases like "dateofbirth" vs "date of birth")
+      return normalizedH === normalizedExpected || 
+             normalizedH.replace(/\s+/g, '') === normalizedExpected.replace(/\s+/g, '');
     });
     if (index === -1) {
-      throw new Error(`Missing required column: ${expected}`);
+      // Provide helpful error message with actual headers found
+      const foundHeaders = rawHeaders.map((h, i) => `"${h}"`).join(', ');
+      throw new Error(`Missing required column: "${expected}". Found headers: ${foundHeaders}`);
     }
     headerMap[expected] = index;
   });
@@ -120,10 +135,14 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
     throw new Error('Excel file must have at least a header row and one data row');
   }
 
-  // Parse header row
-  const headers = data[0].map((h: any) => String(h).toLowerCase().trim());
+  // Parse header row - normalize headers by lowercasing and normalizing whitespace
+  const headers = data[0].map((h: any) => {
+    const str = String(h || '').trim();
+    // Normalize whitespace: replace multiple spaces with single space, then lowercase
+    return str.replace(/\s+/g, ' ').toLowerCase();
+  });
   
-  // Expected headers (case-insensitive)
+  // Expected headers (case-insensitive, normalized)
   const expectedHeaders = [
     'participant',
     'date of birth',
@@ -137,15 +156,25 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
     'rate'
   ];
 
+  // Helper function to normalize header for comparison
+  const normalizeHeader = (header: string): string => {
+    return header.replace(/\s+/g, ' ').toLowerCase().trim();
+  };
+
   // Map headers to indices
   const headerMap: Record<string, number> = {};
   expectedHeaders.forEach(expected => {
+    const normalizedExpected = normalizeHeader(expected);
     const index = headers.findIndex(h => {
-      const normalizedH = String(h).trim();
-      return normalizedH === expected || normalizedH === expected.replace(/\s+/g, '');
+      const normalizedH = normalizeHeader(String(h || ''));
+      // Match exact or with spaces removed (for cases like "dateofbirth" vs "date of birth")
+      return normalizedH === normalizedExpected || 
+             normalizedH.replace(/\s+/g, '') === normalizedExpected.replace(/\s+/g, '');
     });
     if (index === -1) {
-      throw new Error(`Missing required column: ${expected}`);
+      // Provide helpful error message with actual headers found
+      const foundHeaders = headers.map((h, i) => `"${data[0][i]}"`).join(', ');
+      throw new Error(`Missing required column: "${expected}". Found headers: ${foundHeaders}`);
     }
     headerMap[expected] = index;
   });
