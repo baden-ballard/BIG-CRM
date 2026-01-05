@@ -82,6 +82,13 @@ interface ParticipantPlan {
   group_option_rate?: {
     id: string;
     rate: number;
+    employer_contribution_type?: string | null;
+    employer_employee_contribution_value?: number | null;
+    employer_spouse_contribution_value?: number | null;
+    employer_child_contribution_value?: number | null;
+    class_1_contribution_amount?: number | null;
+    class_2_contribution_amount?: number | null;
+    class_3_contribution_amount?: number | null;
   } | null;
 }
 
@@ -3862,13 +3869,13 @@ export default function ParticipantDetailPage() {
                     // #endregion
                     
                     if (rate !== null) {
-                      if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount !== null) {
+                      if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount != null) {
                         // Composite plan: use class_1_contribution_amount from group_option_rate
                         const contributionType = plan.group_option_rate.employer_contribution_type;
                         const contributionValue = plan.group_option_rate.class_1_contribution_amount;
-                        if (contributionType === 'Percentage') {
+                        if (contributionType === 'Percentage' && contributionValue != null) {
                           amountPaidByEmployer = rate * (contributionValue / 100);
-                        } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                        } else if ((contributionType === 'Dollar Amount' || contributionType === 'Dollar') && contributionValue != null) {
                           amountPaidByEmployer = contributionValue;
                         }
                         // #region agent log
@@ -4017,13 +4024,13 @@ export default function ParticipantDetailPage() {
                     const planType = plan.group_plan?.plan_type;
                     
                     if (rate !== null) {
-                      if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount !== null) {
+                      if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount != null) {
                         // Composite plan: use class_1_contribution_amount from group_option_rate
                         const contributionType = plan.group_option_rate.employer_contribution_type;
                         const contributionValue = plan.group_option_rate.class_1_contribution_amount;
-                        if (contributionType === 'Percentage') {
+                        if (contributionType === 'Percentage' && contributionValue != null) {
                           amountPaidByEmployer = rate * (contributionValue / 100);
-                        } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
+                        } else if ((contributionType === 'Dollar Amount' || contributionType === 'Dollar') && contributionValue != null) {
                           amountPaidByEmployer = contributionValue;
                         }
                       } else if (plan.group_plan?.employer_contribution_type && plan.group_plan?.employer_contribution_value) {

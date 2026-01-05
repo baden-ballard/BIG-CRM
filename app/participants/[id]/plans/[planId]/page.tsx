@@ -57,6 +57,13 @@ interface ParticipantPlan {
     rate: number;
     start_date: string | null;
     end_date: string | null;
+    employer_contribution_type?: string | null;
+    employer_employee_contribution_value?: number | null;
+    employer_spouse_contribution_value?: number | null;
+    employer_child_contribution_value?: number | null;
+    class_1_contribution_amount?: number | null;
+    class_2_contribution_amount?: number | null;
+    class_3_contribution_amount?: number | null;
   } | null;
   dependent?: {
     id: string;
@@ -1322,13 +1329,13 @@ export default function ParticipantPlanDetailPage() {
           let employeeAmount: number | null = null;
           const planType = plan.group_plan?.plan_type;
           
-          if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount !== null) {
+          if (planType === 'Composite' && plan.group_option_rate?.employer_contribution_type && plan.group_option_rate?.class_1_contribution_amount != null) {
             // Calculate from group_option_rate for Composite plans
             const contributionType = plan.group_option_rate.employer_contribution_type;
             const contributionValue = plan.group_option_rate.class_1_contribution_amount;
             let amountPaidByEmployer: number | null = null;
             
-            if (contributionType && contributionValue !== null && planRate) {
+            if (contributionType && contributionValue != null && planRate) {
               if (contributionType === 'Percentage') {
                 amountPaidByEmployer = planRate * (contributionValue / 100);
               } else if (contributionType === 'Dollar Amount' || contributionType === 'Dollar') {
@@ -1712,7 +1719,7 @@ export default function ParticipantPlanDetailPage() {
                         <p className="text-xs text-[var(--glass-gray-medium)] mt-1">Custom override</p>
                       )}
                     </div>
-                    {contributionValue !== null && (
+                    {contributionValue !== null && amountPaidByEmployer !== null && (
                       <>
                         <div>
                           <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Amount Paid By Employer</p>
