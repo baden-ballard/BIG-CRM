@@ -11,6 +11,7 @@ interface CSVRow {
   phoneNumber: string;
   emailAddress: string;
   address: string;
+  idNumber: string;
   planStartDate: string;
   provider: string;
   planName: string;
@@ -76,6 +77,7 @@ export default function UploadMedicareParticipantsPage() {
       'phone number',
       'email address',
       'address',
+      'id number',
       'plan start date',
       'provider',
       'plan name',
@@ -109,6 +111,7 @@ export default function UploadMedicareParticipantsPage() {
         phoneNumber: values[headerMap['phone number']] || '',
         emailAddress: values[headerMap['email address']] || '',
         address: values[headerMap['address']] || '',
+        idNumber: values[headerMap['id number']] || '',
         planStartDate: values[headerMap['plan start date']] || '',
         provider: values[headerMap['provider']] || '',
         planName: values[headerMap['plan name']] || '',
@@ -226,7 +229,7 @@ export default function UploadMedicareParticipantsPage() {
               className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
             />
             <p className="text-xs text-[var(--glass-gray-medium)] mt-2">
-              File must include columns: Participant, Date of Birth, Phone Number, Email Address, Address, Plan Start Date, Provider, Plan Name, Rate
+              File must include columns: Participant, Date of Birth, Phone Number, Email Address, Address, ID Number, Plan Start Date, Provider, Plan Name, Rate
             </p>
           </div>
 

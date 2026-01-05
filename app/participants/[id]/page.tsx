@@ -14,6 +14,7 @@ interface Participant {
   address: string | null;
   phone_number: string | null;
   email_address: string | null;
+  id_number: string | null;
   number_of_spouses: number | null;
   number_of_children: number | null;
   class_number: number | null;
@@ -197,6 +198,7 @@ export default function ParticipantDetailPage() {
     address: '',
     phone_number: '',
     email_address: '',
+    id_number: '',
     group_id: '',
     number_of_spouses: '',
     number_of_children: '',
@@ -357,6 +359,7 @@ export default function ParticipantDetailPage() {
         address: data.address || '',
         phone_number: data.phone_number || '',
         email_address: data.email_address || '',
+        id_number: data.id_number || '',
         group_id: data.group_id || '',
         number_of_spouses: data.number_of_spouses != null ? String(data.number_of_spouses) : '',
         number_of_children: data.number_of_children != null ? String(data.number_of_children) : '',
@@ -2855,6 +2858,11 @@ export default function ParticipantDetailPage() {
       } else {
         updateData.email_address = null;
       }
+      if (formData.id_number) {
+        updateData.id_number = formData.id_number;
+      } else {
+        updateData.id_number = null;
+      }
       if (formData.group_id) {
         updateData.group_id = formData.group_id;
       } else {
@@ -4141,6 +4149,24 @@ export default function ParticipantDetailPage() {
 
             {!collapsedSections['medicare-plans'] && (
               <>
+            {/* Participant Info - ID Number Field */}
+            <div className="mb-6">
+              <div>
+                <label htmlFor="id_number" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
+                  ID Number
+                </label>
+                <input
+                  type="text"
+                  id="id_number"
+                  name="id_number"
+                  value={formData.id_number}
+                  onChange={handleChange}
+                  disabled={!isEditMode}
+                  className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${!isEditMode ? 'opacity-75 cursor-not-allowed' : ''}`}
+                />
+              </div>
+            </div>
+
             {/* Active Medicare Plans Subsection */}
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">

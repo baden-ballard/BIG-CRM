@@ -8,6 +8,7 @@ interface CSVRow {
   phoneNumber: string;
   emailAddress: string;
   address: string;
+  idNumber: string;
   planStartDate: string;
   provider: string;
   planName: string;
@@ -62,6 +63,7 @@ function parseCSV(csvText: string): CSVRow[] {
     'phone number',
     'email address',
     'address',
+    'id number',
     'plan start date',
     'provider',
     'plan name',
@@ -95,6 +97,7 @@ function parseCSV(csvText: string): CSVRow[] {
       phoneNumber: values[headerMap['phone number']] || '',
       emailAddress: values[headerMap['email address']] || '',
       address: values[headerMap['address']] || '',
+      idNumber: values[headerMap['id number']] || '',
       planStartDate: values[headerMap['plan start date']] || '',
       provider: values[headerMap['provider']] || '',
       planName: values[headerMap['plan name']] || '',
@@ -127,6 +130,7 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
     'phone number',
     'email address',
     'address',
+    'id number',
     'plan start date',
     'provider',
     'plan name',
@@ -160,6 +164,7 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
       phoneNumber: values[headerMap['phone number']] || '',
       emailAddress: values[headerMap['email address']] || '',
       address: values[headerMap['address']] || '',
+      idNumber: values[headerMap['id number']] || '',
       planStartDate: values[headerMap['plan start date']] || '',
       provider: values[headerMap['provider']] || '',
       planName: values[headerMap['plan name']] || '',
@@ -317,6 +322,7 @@ export async function POST(request: NextRequest) {
           if (row.phoneNumber) updateData.phone_number = row.phoneNumber.trim();
           if (row.emailAddress) updateData.email_address = row.emailAddress.trim();
           if (row.address) updateData.address = row.address.trim();
+          if (row.idNumber) updateData.id_number = row.idNumber.trim();
 
           if (Object.keys(updateData).length > 0) {
             await supabase
@@ -338,6 +344,7 @@ export async function POST(request: NextRequest) {
           if (row.phoneNumber) insertData.phone_number = row.phoneNumber.trim();
           if (row.emailAddress) insertData.email_address = row.emailAddress.trim();
           if (row.address) insertData.address = row.address.trim();
+          if (row.idNumber) insertData.id_number = row.idNumber.trim();
 
           const { data: newParticipant, error: insertError } = await supabase
             .from('participants')
