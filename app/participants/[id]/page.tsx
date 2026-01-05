@@ -2808,7 +2808,8 @@ export default function ParticipantDetailPage() {
         return;
       }
 
-      if (!formData.hire_date || formData.hire_date.trim() === '') {
+      // Hire Date is only required when Group Information section is shown (when participant is in a group)
+      if (participant?.group_id && (!formData.hire_date || formData.hire_date.trim() === '')) {
         alert('Please enter a hire date. Hire Date is required.');
         setIsSubmitting(false);
         return;
@@ -3305,7 +3306,7 @@ export default function ParticipantDetailPage() {
                         value={formData.class_number}
                         onChange={handleChange}
                         disabled={!isEditMode}
-                        required={isEditMode}
+                        required={isEditMode && selectedGroup && selectedGroup.number_of_classes && selectedGroup.number_of_classes > 1}
                         className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${!isEditMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                       >
                         <option value="">Select a class</option>
@@ -3334,7 +3335,7 @@ export default function ParticipantDetailPage() {
                           name="hire_date"
                           value={formData.hire_date}
                           onChange={handleChange}
-                          required
+                          required={isEditMode && !!participant?.group_id}
                           className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                         />
                         <div className="calendar-icon">

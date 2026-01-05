@@ -429,7 +429,7 @@ function NewParticipantPageContent() {
                       name="class_number"
                       value={formData.class_number}
                       onChange={handleChange}
-                      required
+                      required={selectedGroup && selectedGroup.number_of_classes && selectedGroup.number_of_classes > 1}
                       className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                     >
                       <option value="">Select a class</option>
@@ -457,7 +457,7 @@ function NewParticipantPageContent() {
                       name="hire_date"
                       value={formData.hire_date}
                       onChange={handleChange}
-                      required
+                      required={!!groupId}
                       className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                     />
                     <div className="calendar-icon">
