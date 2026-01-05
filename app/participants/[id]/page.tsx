@@ -3306,7 +3306,7 @@ export default function ParticipantDetailPage() {
                         value={formData.class_number}
                         onChange={handleChange}
                         disabled={!isEditMode}
-                        required={isEditMode && selectedGroup && selectedGroup.number_of_classes && selectedGroup.number_of_classes > 1}
+                        required={!!(isEditMode && selectedGroup && selectedGroup.number_of_classes && selectedGroup.number_of_classes > 1)}
                         className={`glass-input-enhanced w-full px-4 py-3 rounded-xl ${!isEditMode ? 'opacity-75 cursor-not-allowed' : ''}`}
                       >
                         <option value="">Select a class</option>
