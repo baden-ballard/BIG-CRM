@@ -1269,6 +1269,7 @@ export default function ParticipantDetailPage() {
         address: participant.address || '',
         phone_number: participant.phone_number || '',
         email_address: participant.email_address || '',
+        id_number: participant.id_number || '',
         group_id: participant.group_id || '',
         number_of_spouses: participant.number_of_spouses != null ? String(participant.number_of_spouses) : '',
         number_of_children: participant.number_of_children != null ? String(participant.number_of_children) : '',
