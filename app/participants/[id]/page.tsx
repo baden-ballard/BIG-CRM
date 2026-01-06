@@ -100,6 +100,7 @@ interface ParticipantMedicarePlan {
   rate_override: number | null;
   effective_date: string | null;
   termination_date: string | null;
+  plan_details: string | null;
   created_at: string;
   updated_at: string;
   medicare_plan: {
@@ -4490,6 +4491,14 @@ export default function ParticipantDetailPage() {
                             </div>
                           )}
                         </div>
+                        {plan.medicare_plan?.plan_name?.toLowerCase() === 'custom age banded plan' && plan.plan_details && (
+                          <div className="mt-3 pt-3 border-t border-white/10">
+                            <span className="text-[var(--glass-gray-medium)] text-sm">Plan Details: </span>
+                            <p className="text-[var(--glass-black-dark)] text-sm mt-1 whitespace-pre-wrap">
+                              {plan.plan_details}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -4587,6 +4596,14 @@ export default function ParticipantDetailPage() {
                             </div>
                           )}
                         </div>
+                        {plan.medicare_plan?.plan_name?.toLowerCase() === 'custom age banded plan' && plan.plan_details && (
+                          <div className="mt-3 pt-3 border-t border-white/10">
+                            <span className="text-[var(--glass-gray-medium)] text-sm">Plan Details: </span>
+                            <p className="text-[var(--glass-black-dark)] text-sm mt-1 whitespace-pre-wrap">
+                              {plan.plan_details}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -4692,6 +4709,14 @@ export default function ParticipantDetailPage() {
                             </div>
                           )}
                         </div>
+                        {plan.medicare_plan?.plan_name?.toLowerCase() === 'custom age banded plan' && plan.plan_details && (
+                          <div className="mt-3 pt-3 border-t border-white/10">
+                            <span className="text-[var(--glass-gray-medium)] text-sm">Plan Details: </span>
+                            <p className="text-[var(--glass-black-dark)] text-sm mt-1 whitespace-pre-wrap">
+                              {plan.plan_details}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

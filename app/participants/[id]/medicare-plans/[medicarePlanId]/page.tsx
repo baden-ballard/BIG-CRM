@@ -15,6 +15,7 @@ interface ParticipantMedicarePlan {
   rate_override: number | null;
   effective_date: string | null;
   termination_date: string | null;
+  plan_details: string | null;
   created_at: string;
   updated_at: string;
   participant: {
@@ -58,6 +59,7 @@ export default function ParticipantMedicarePlanDetailPage() {
   const [isDeletingPlan, setIsDeletingPlan] = useState(false);
   const [editingEffectiveDate, setEditingEffectiveDate] = useState<string>('');
   const [editingTerminationDate, setEditingTerminationDate] = useState<string>('');
+  const [editingPlanDetails, setEditingPlanDetails] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -111,6 +113,7 @@ export default function ParticipantMedicarePlanDetailPage() {
       // Initialize edit fields with current values
       setEditingEffectiveDate(planData.effective_date || '');
       setEditingTerminationDate(planData.termination_date || '');
+      setEditingPlanDetails(planData.plan_details || '');
 
       // Fetch all rate history for this Medicare plan
       if (data.medicare_plan?.id) {
@@ -142,6 +145,7 @@ export default function ParticipantMedicarePlanDetailPage() {
       const updateData: {
         effective_date?: string | null;
         termination_date?: string | null;
+        plan_details?: string | null;
       } = {};
 
       // Only update if values changed
@@ -150,6 +154,9 @@ export default function ParticipantMedicarePlanDetailPage() {
       }
       if (editingTerminationDate !== (currentPlan.termination_date || '')) {
         updateData.termination_date = editingTerminationDate || null;
+      }
+      if (editingPlanDetails !== (currentPlan.plan_details || '')) {
+        updateData.plan_details = editingPlanDetails || null;
       }
 
       if (Object.keys(updateData).length === 0) {
@@ -182,6 +189,7 @@ export default function ParticipantMedicarePlanDetailPage() {
     if (currentPlan) {
       setEditingEffectiveDate(currentPlan.effective_date || '');
       setEditingTerminationDate(currentPlan.termination_date || '');
+      setEditingPlanDetails(currentPlan.plan_details || '');
     }
     setIsEditMode(false);
   };
@@ -496,6 +504,29 @@ export default function ParticipantMedicarePlanDetailPage() {
                       </span>
                     );
                   })()}
+                </div>
+              )}
+              {/* Plan Details */}
+              {(currentPlan.plan_details || isEditMode) && (
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
+                    Plan Details
+                  </label>
+                  {isEditMode ? (
+                    <textarea
+                      value={editingPlanDetails}
+                      onChange={(e) => setEditingPlanDetails(e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-white/20 rounded-lg bg-white/10 backdrop-blur-sm text-[var(--glass-black-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--glass-primary)]/50 text-sm"
+                      placeholder="Plan details will appear here for Custom Age Banded Plans"
+                    />
+                  ) : (
+                    <div className="px-3 py-2 border border-white/20 rounded-lg bg-white/10 backdrop-blur-sm">
+                      <p className="text-[var(--glass-black-dark)] text-sm whitespace-pre-wrap">
+                        {currentPlan.plan_details || 'N/A'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

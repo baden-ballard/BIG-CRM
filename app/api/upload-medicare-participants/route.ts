@@ -13,6 +13,7 @@ interface CSVRow {
   provider: string;
   planName: string;
   rate: string;
+  ageBandedPlanName: string;
 }
 
 function parseCSVLine(line: string): string[] {
@@ -72,7 +73,8 @@ function parseCSV(csvText: string): CSVRow[] {
     'plan start date',
     'provider',
     'plan name',
-    'rate'
+    'rate',
+    'age banded plan name'
   ];
 
   // Helper function to normalize header for comparison
@@ -117,6 +119,7 @@ function parseCSV(csvText: string): CSVRow[] {
       provider: values[headerMap['provider']] || '',
       planName: values[headerMap['plan name']] || '',
       rate: values[headerMap['rate']] || '',
+      ageBandedPlanName: values[headerMap['age banded plan name']] || '',
     });
   }
 
@@ -153,7 +156,8 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
     'plan start date',
     'provider',
     'plan name',
-    'rate'
+    'rate',
+    'age banded plan name'
   ];
 
   // Helper function to normalize header for comparison
@@ -198,6 +202,7 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
       provider: values[headerMap['provider']] || '',
       planName: values[headerMap['plan name']] || '',
       rate: values[headerMap['rate']] || '',
+      ageBandedPlanName: values[headerMap['age banded plan name']] || '',
     });
   }
 
@@ -305,10 +310,27 @@ export async function POST(request: NextRequest) {
 
       try {
         // Validate required fields
-        if (!row.participant || !row.dateOfBirth || !row.provider || !row.planName || !row.rate || !row.planStartDate) {
-          details.push(`Row ${rowNum}: Missing required fields (Participant, Date of Birth, Plan Start Date, Provider, Plan Name, or Rate)`);
+        const isCustomAgeBandedPlan = row.planName.trim().toLowerCase() === 'custom age banded plan';
+        if (!row.participant || !row.dateOfBirth || !row.provider || !row.planName || !row.planStartDate) {
+          details.push(`Row ${rowNum}: Missing required fields (Participant, Date of Birth, Plan Start Date, Provider, or Plan Name)`);
           errors++;
           continue;
+        }
+        
+        // For Custom Age Banded Plan, require ageBandedPlanName and rate
+        // For regular plans, require rate
+        if (isCustomAgeBandedPlan) {
+          if (!row.ageBandedPlanName || !row.rate) {
+            details.push(`Row ${rowNum}: Missing required fields for Custom Age Banded Plan (Age Banded Plan Name and Rate)`);
+            errors++;
+            continue;
+          }
+        } else {
+          if (!row.rate) {
+            details.push(`Row ${rowNum}: Missing required field (Rate)`);
+            errors++;
+            continue;
+          }
         }
 
         // Normalize dates
@@ -434,6 +456,89 @@ export async function POST(request: NextRequest) {
 
         const medicarePlanId = medicarePlan.id;
 
+        // Check if this participant already has this specific plan assignment
+        // This prevents duplicate plan assignments while allowing multiple different plans
+        const { data: existingPlanAssignments, error: checkError } = await supabase
+          .from('participant_medicare_plans')
+          .select('id, plan_details')
+          .eq('participant_id', participantId)
+          .eq('medicare_plan_id', medicarePlanId);
+
+        if (checkError) {
+          throw checkError;
+        }
+
+        // Handle Custom Age Banded Plan differently
+        if (isCustomAgeBandedPlan) {
+          // Validate age banded plan name
+          if (!row.ageBandedPlanName || !row.ageBandedPlanName.trim()) {
+            details.push(`Row ${rowNum}: Age Banded Plan Name is required for Custom Age Banded Plan`);
+            errors++;
+            continue;
+          }
+
+          const rateValue = parseFloat(row.rate.trim());
+          if (isNaN(rateValue)) {
+            details.push(`Row ${rowNum}: Invalid rate value: ${row.rate}`);
+            errors++;
+            continue;
+          }
+
+          // Format plan details: Plan Name : [Age Banded Plan Name] - Rate : [Rate] - Rate Start Date : [Plan Start Date]
+          const planDetailsEntry = `Plan Name : ${row.ageBandedPlanName.trim()} - Rate : ${rateValue.toFixed(2)} - Rate Start Date : ${planStartDate}`;
+
+          // If participant already has this plan, append to existing plan_details
+          if (existingPlanAssignments && existingPlanAssignments.length > 0) {
+            const existingPlan = existingPlanAssignments[0];
+            const existingPlanDetails = existingPlan.plan_details || '';
+            const updatedPlanDetails = existingPlanDetails 
+              ? `${existingPlanDetails}\n${planDetailsEntry}`
+              : planDetailsEntry;
+
+            const { error: updateError } = await supabase
+              .from('participant_medicare_plans')
+              .update({ plan_details: updatedPlanDetails })
+              .eq('id', existingPlan.id);
+
+            if (updateError) {
+              throw updateError;
+            }
+
+            processed++;
+            details.push(`Row ${rowNum}: Successfully appended plan details to existing Custom Age Banded Plan for "${normalizedParticipantName}"`);
+            continue;
+          }
+
+          // Create new participant_medicare_plans record for Custom Age Banded Plan
+          const participantMedicarePlanData: any = {
+            participant_id: participantId,
+            medicare_plan_id: medicarePlanId,
+            medicare_child_rate_id: null, // No rate connection for Custom Age Banded Plan
+            effective_date: planStartDate,
+            plan_details: planDetailsEntry,
+          };
+
+          const { data: participantMedicarePlan, error: pmpError } = await supabase
+            .from('participant_medicare_plans')
+            .insert([participantMedicarePlanData])
+            .select()
+            .single();
+
+          if (pmpError) {
+            if (pmpError.code === '23505') {
+              details.push(`Row ${rowNum}: Participant "${normalizedParticipantName}" already has this Medicare plan assignment (${row.planName} from ${row.provider})`);
+              errors++;
+              continue;
+            }
+            throw pmpError;
+          }
+
+          processed++;
+          details.push(`Row ${rowNum}: Successfully created Custom Age Banded Plan assignment for "${normalizedParticipantName}"`);
+          continue;
+        }
+
+        // Regular plan handling (existing logic)
         // Find Rate History record matching the rate
         const rateValue = parseFloat(row.rate.trim());
         if (isNaN(rateValue)) {
@@ -479,18 +584,6 @@ export async function POST(request: NextRequest) {
           details.push(`Row ${rowNum}: Rate ${rateValue} not found for Medicare plan "${row.planName}" (Provider: "${row.provider}")`);
           errors++;
           continue;
-        }
-
-        // Check if this participant already has this specific plan assignment
-        // This prevents duplicate plan assignments while allowing multiple different plans
-        const { data: existingPlanAssignments, error: checkError } = await supabase
-          .from('participant_medicare_plans')
-          .select('id')
-          .eq('participant_id', participantId)
-          .eq('medicare_plan_id', medicarePlanId);
-
-        if (checkError) {
-          throw checkError;
         }
 
         // If participant already has this plan, skip it (don't create duplicate)
