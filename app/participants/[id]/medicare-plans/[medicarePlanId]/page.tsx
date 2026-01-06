@@ -14,6 +14,7 @@ interface ParticipantMedicarePlan {
   medicare_child_rate_id: string | null;
   rate_override: number | null;
   effective_date: string | null;
+  termination_date: string | null;
   created_at: string;
   updated_at: string;
   participant: {
@@ -55,6 +56,9 @@ export default function ParticipantMedicarePlanDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeletingPlan, setIsDeletingPlan] = useState(false);
+  const [editingEffectiveDate, setEditingEffectiveDate] = useState<string>('');
+  const [editingTerminationDate, setEditingTerminationDate] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (participantId && medicarePlanId) {
@@ -102,7 +106,11 @@ export default function ParticipantMedicarePlanDetailPage() {
         throw new Error('Participant Medicare plan not found');
       }
 
-      setCurrentPlan(data as ParticipantMedicarePlan);
+      const planData = data as ParticipantMedicarePlan;
+      setCurrentPlan(planData);
+      // Initialize edit fields with current values
+      setEditingEffectiveDate(planData.effective_date || '');
+      setEditingTerminationDate(planData.termination_date || '');
 
       // Fetch all rate history for this Medicare plan
       if (data.medicare_plan?.id) {
@@ -124,6 +132,58 @@ export default function ParticipantMedicarePlanDetailPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSave = async () => {
+    if (!currentPlan) return;
+
+    setIsSaving(true);
+    try {
+      const updateData: {
+        effective_date?: string | null;
+        termination_date?: string | null;
+      } = {};
+
+      // Only update if values changed
+      if (editingEffectiveDate !== (currentPlan.effective_date || '')) {
+        updateData.effective_date = editingEffectiveDate || null;
+      }
+      if (editingTerminationDate !== (currentPlan.termination_date || '')) {
+        updateData.termination_date = editingTerminationDate || null;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        setIsEditMode(false);
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from('participant_medicare_plans')
+        .update(updateData)
+        .eq('id', currentPlan.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Refresh the data
+      await fetchParticipantMedicarePlan();
+      setIsEditMode(false);
+    } catch (err: any) {
+      console.error('Error updating participant Medicare plan:', err);
+      alert('Failed to update Medicare plan enrollment. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    // Reset edit fields to current values
+    if (currentPlan) {
+      setEditingEffectiveDate(currentPlan.effective_date || '');
+      setEditingTerminationDate(currentPlan.termination_date || '');
+    }
+    setIsEditMode(false);
   };
 
   const handleDelete = async () => {
@@ -184,6 +244,26 @@ export default function ParticipantMedicarePlanDetailPage() {
     
     // If end date is null or in the future, it's Active
     if (!endDate || endDate >= today) {
+      return 'Active';
+    }
+    
+    // Otherwise, it's Ended
+    return 'Ended';
+  };
+
+  const calculatePlanStatus = (effectiveDate: string | null, terminationDate: string | null): 'Pending' | 'Active' | 'Ended' => {
+    if (!effectiveDate) return 'Ended';
+    
+    const today = new Date().toISOString().split('T')[0];
+    const effective = new Date(effectiveDate).toISOString().split('T')[0];
+    
+    // If effective date is in the future, it's Pending
+    if (effective > today) {
+      return 'Pending';
+    }
+    
+    // If termination date is null or in the future, it's Active
+    if (!terminationDate || terminationDate >= today) {
       return 'Active';
     }
     
@@ -310,10 +390,26 @@ export default function ParticipantMedicarePlanDetailPage() {
       <GlassCard className="mb-6">
         <div className="p-6 space-y-6">
           <div>
-            <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
-              Plan Information
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                Plan Information
+              </h2>
+              {(() => {
+                const planStatus = calculatePlanStatus(currentPlan.effective_date, currentPlan.termination_date);
+                const statusColors = {
+                  Pending: 'bg-blue-500/20 text-blue-700',
+                  Active: 'bg-green-500/20 text-green-700',
+                  Ended: 'bg-gray-500/20 text-gray-700'
+                };
+                return (
+                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${statusColors[planStatus]}`}>
+                    Status: {planStatus}
+                  </span>
+                );
+              })()}
+            </div>
+            <div className="space-y-4">
+              {/* Row 1: Participant (full width) */}
               <div>
                 <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
                   Participant
@@ -322,30 +418,86 @@ export default function ParticipantMedicarePlanDetailPage() {
                   {currentPlan.participant?.client_name || 'N/A'}
                 </p>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
-                  Medicare Plan
-                </label>
-                <p className="text-[var(--glass-black-dark)] font-medium">
-                  {currentPlan.medicare_plan?.plan_name || 'N/A'}
-                </p>
+              {/* Row 2: Provider, Medicare Plan (side by side) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
+                    Provider
+                  </label>
+                  <p className="text-[var(--glass-black-dark)] font-medium">
+                    {currentPlan.medicare_plan?.provider?.name || 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
+                    Medicare Plan
+                  </label>
+                  <p className="text-[var(--glass-black-dark)] font-medium">
+                    {currentPlan.medicare_plan?.plan_name || 'N/A'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
-                  Provider
-                </label>
-                <p className="text-[var(--glass-black-dark)] font-medium">
-                  {currentPlan.medicare_plan?.provider?.name || 'N/A'}
-                </p>
+              {/* Row 3: Effective Date, Termination Date (side by side) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
+                    Effective Date
+                  </label>
+                  {isEditMode ? (
+                    <input
+                      type="date"
+                      value={editingEffectiveDate}
+                      onChange={(e) => setEditingEffectiveDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-white/20 rounded-lg bg-white/10 backdrop-blur-sm text-[var(--glass-black-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--glass-primary)]/50"
+                    />
+                  ) : (
+                    <p className="text-[var(--glass-black-dark)] font-medium">
+                      {formatDate(currentPlan.effective_date)}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
+                    Termination Date
+                  </label>
+                  {isEditMode ? (
+                    <input
+                      type="date"
+                      value={editingTerminationDate}
+                      onChange={(e) => setEditingTerminationDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-white/20 rounded-lg bg-white/10 backdrop-blur-sm text-[var(--glass-black-dark)] focus:outline-none focus:ring-2 focus:ring-[var(--glass-primary)]/50"
+                    />
+                  ) : (
+                    <p className="text-[var(--glass-black-dark)] font-medium">
+                      {formatDate(currentPlan.termination_date)}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
-                  Effective Date
-                </label>
-                <p className="text-[var(--glass-black-dark)] font-medium">
-                  {formatDate(currentPlan.effective_date)}
-                </p>
-              </div>
+              {/* Status Preview in Edit Mode */}
+              {isEditMode && (
+                <div className="pt-2">
+                  <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
+                    Status Preview
+                  </label>
+                  {(() => {
+                    const previewStatus = calculatePlanStatus(
+                      editingEffectiveDate || null,
+                      editingTerminationDate || null
+                    );
+                    const statusColors = {
+                      Pending: 'bg-blue-500/20 text-blue-700',
+                      Active: 'bg-green-500/20 text-green-700',
+                      Ended: 'bg-gray-500/20 text-gray-700'
+                    };
+                    return (
+                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${statusColors[previewStatus]}`}>
+                        {previewStatus}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           </div>
 
@@ -540,58 +692,22 @@ export default function ParticipantMedicarePlanDetailPage() {
             </div>
           </div>
 
-          <div className="border-t border-white/20 pt-6">
-            <h2 className="text-2xl font-bold text-[var(--glass-black-dark)] mb-4">
-              Record Information
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
-                  Record ID
-                </label>
-                <p className="text-[var(--glass-black-dark)] font-mono text-sm">
-                  {currentPlan.id}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
-                  Created At
-                </label>
-                <p className="text-[var(--glass-black-dark)] font-medium">
-                  {formatDate(currentPlan.created_at)}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--glass-gray-medium)] mb-1">
-                  Last Updated
-                </label>
-                <p className="text-[var(--glass-black-dark)] font-medium">
-                  {formatDate(currentPlan.updated_at)}
-                </p>
-              </div>
-            </div>
-          </div>
-
           {isEditMode && (
             <div className="border-t border-white/20 pt-6">
-              <div className="bg-yellow-500/20 border border-yellow-500/40 rounded-xl p-4 mb-4">
-                <p className="text-sm font-semibold text-yellow-700 text-center">
-                  Edit mode coming soon. For now, you can delete and recreate the enrollment.
-                </p>
-              </div>
               <div className="flex justify-end gap-3">
                 <GlassButton 
                   variant="outline" 
-                  onClick={() => setIsEditMode(false)}
+                  onClick={handleCancel}
+                  disabled={isSaving}
                 >
                   Cancel
                 </GlassButton>
                 <GlassButton 
                   variant="primary" 
-                  onClick={handleDelete}
-                  disabled={isDeletingPlan}
+                  onClick={handleSave}
+                  disabled={isSaving}
                 >
-                  {isDeletingPlan ? 'Deleting...' : 'Delete Enrollment'}
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </GlassButton>
               </div>
             </div>

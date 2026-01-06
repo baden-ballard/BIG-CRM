@@ -99,6 +99,7 @@ interface ParticipantMedicarePlan {
   medicare_child_rate_id: string | null;
   rate_override: number | null;
   effective_date: string | null;
+  termination_date: string | null;
   created_at: string;
   updated_at: string;
   medicare_plan: {
@@ -145,7 +146,8 @@ export default function ParticipantDetailPage() {
   const [activePlans, setActivePlans] = useState<ParticipantPlan[]>([]);
   const [terminatedPlans, setTerminatedPlans] = useState<ParticipantPlan[]>([]);
   const [activeMedicarePlans, setActiveMedicarePlans] = useState<ParticipantMedicarePlan[]>([]);
-  const [terminatedMedicarePlans, setTerminatedMedicarePlans] = useState<ParticipantMedicarePlan[]>([]);
+  const [pendingMedicarePlans, setPendingMedicarePlans] = useState<ParticipantMedicarePlan[]>([]);
+  const [endedMedicarePlans, setEndedMedicarePlans] = useState<ParticipantMedicarePlan[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAddPlanForm, setShowAddPlanForm] = useState(false);
   const [showAddDependentForm, setShowAddDependentForm] = useState(false);
@@ -293,7 +295,7 @@ export default function ParticipantDetailPage() {
 
   // Handle hash-based scrolling to specific Medicare plan records
   useEffect(() => {
-    if (activeMedicarePlans.length > 0 || terminatedMedicarePlans.length > 0) {
+    if (activeMedicarePlans.length > 0 || pendingMedicarePlans.length > 0 || endedMedicarePlans.length > 0) {
       const hash = window.location.hash;
       if (hash && hash.startsWith('#medicare-plan-')) {
         const planId = hash.replace('#medicare-plan-', '');
@@ -310,7 +312,7 @@ export default function ParticipantDetailPage() {
         }, 300);
       }
     }
-  }, [activeMedicarePlans, terminatedMedicarePlans]);
+  }, [activeMedicarePlans, pendingMedicarePlans, endedMedicarePlans]);
 
   const fetchParticipant = async () => {
     try {
@@ -787,11 +789,32 @@ export default function ParticipantDetailPage() {
     }
   };
 
+  const calculatePlanStatus = (effectiveDate: string | null, terminationDate: string | null): 'Pending' | 'Active' | 'Ended' => {
+    if (!effectiveDate) return 'Ended';
+    
+    const today = new Date().toISOString().split('T')[0];
+    const effective = new Date(effectiveDate).toISOString().split('T')[0];
+    
+    // If effective date is in the future, it's Pending
+    if (effective > today) {
+      return 'Pending';
+    }
+    
+    // If termination date is null or in the future, it's Active
+    if (!terminationDate || terminationDate >= today) {
+      return 'Active';
+    }
+    
+    // Otherwise, it's Ended
+    return 'Ended';
+  };
+
   const fetchMedicarePlans = async () => {
     try {
       if (!participantId) {
         setActiveMedicarePlans([]);
-        setTerminatedMedicarePlans([]);
+        setPendingMedicarePlans([]);
+        setEndedMedicarePlans([]);
         return;
       }
 
@@ -933,19 +956,28 @@ export default function ParticipantDetailPage() {
       const uniquePlans = Array.from(uniquePlansMap.values());
 
       const active: ParticipantMedicarePlan[] = [];
-      const terminated: ParticipantMedicarePlan[] = [];
+      const pending: ParticipantMedicarePlan[] = [];
+      const ended: ParticipantMedicarePlan[] = [];
 
       uniquePlans.forEach((plan) => {
-        // Medicare plans don't have termination dates, so treat all as active
-        active.push(plan);
+        const status = calculatePlanStatus(plan.effective_date, plan.termination_date);
+        if (status === 'Active') {
+          active.push(plan);
+        } else if (status === 'Pending') {
+          pending.push(plan);
+        } else {
+          ended.push(plan);
+        }
       });
 
       setActiveMedicarePlans(active);
-      setTerminatedMedicarePlans(terminated);
+      setPendingMedicarePlans(pending);
+      setEndedMedicarePlans(ended);
     } catch (err: any) {
       console.error('Error fetching Medicare plans:', err);
       setActiveMedicarePlans([]);
-      setTerminatedMedicarePlans([]);
+      setPendingMedicarePlans([]);
+      setEndedMedicarePlans([]);
     }
   };
 
@@ -4215,7 +4247,7 @@ export default function ParticipantDetailPage() {
                   type="button"
                   onClick={handleAddMedicarePlan}
                 >
-                  {activeMedicarePlans.length === 0 && newMedicarePlans.length === 0 
+                  {(activeMedicarePlans.length === 0 && pendingMedicarePlans.length === 0 && endedMedicarePlans.length === 0 && newMedicarePlans.length === 0)
                     ? '+ Add Medicare Plan' 
                     : '+ Add Another Medicare Plan'}
                 </GlassButton>
@@ -4465,16 +4497,30 @@ export default function ParticipantDetailPage() {
               )}
             </div>
 
-            {/* Terminated Medicare Plans Subsection */}
-            {terminatedMedicarePlans.length > 0 && (
-              <div>
+            {/* Pending Medicare Plans Subsection */}
+            {pendingMedicarePlans.length > 0 && (
+              <div className="mb-8">
                 <h3 className="text-xl font-semibold text-[var(--glass-black-dark)] mb-4">
-                  Terminated Medicare Plans
+                  Pending Medicare Plans
                 </h3>
                 <div className="space-y-3">
-                  {terminatedMedicarePlans.map((plan) => {
-                    // Use active_rate if available, otherwise fall back to linked rate (use ?? instead of || to preserve 0 values)
-                    const rate = (plan as any).active_rate?.rate ?? plan.medicare_child_rate?.rate ?? null;
+                  {pendingMedicarePlans.map((plan) => {
+                    // Get rate with priority: rate_override > active_rate from medicarePlanRatesMap > linked medicare_child_rate
+                    let rate: number | null = null;
+                    
+                    // First check for rate_override
+                    if (plan.rate_override !== null) {
+                      rate = plan.rate_override;
+                    } else {
+                      // Try to get from medicarePlanRatesMap (uses priority logic)
+                      const planRatesData = medicarePlanRatesMap.get(plan.medicare_plan_id);
+                      if (planRatesData?.activeRate) {
+                        rate = planRatesData.activeRate.rate;
+                      } else {
+                        // Fall back to linked rate (use ?? instead of || to preserve 0 values)
+                        rate = plan.medicare_child_rate?.rate ?? null;
+                      }
+                    }
 
                     const handlePlanClick = (e: React.MouseEvent) => {
                       e.preventDefault();
@@ -4494,15 +4540,13 @@ export default function ParticipantDetailPage() {
                         key={plan.id}
                         id={`medicare-plan-${plan.id}`}
                         onClick={handlePlanClick}
-                        className="glass-card rounded-xl p-4 bg-white/5 border border-white/10 opacity-75 transition-colors duration-200 cursor-pointer hover:bg-white/10"
+                        className="glass-card rounded-xl p-4 bg-blue-500/10 border border-blue-500/20 transition-colors duration-200 cursor-pointer hover:bg-blue-500/15"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-4 flex-wrap">
-                              <h4 className="font-semibold text-[var(--glass-black-dark)] text-lg">
-                                {plan.medicare_plan?.plan_name || 'Unnamed Medicare Plan'}
-                              </h4>
-                            </div>
+                            <h4 className="font-semibold text-[var(--glass-black-dark)] text-lg">
+                              {plan.medicare_plan?.plan_name || 'Unnamed Medicare Plan'}
+                            </h4>
                           </div>
                           <div className="flex items-center gap-3">
                             {rate !== null && (
@@ -4539,6 +4583,111 @@ export default function ParticipantDetailPage() {
                               <span className="text-[var(--glass-gray-medium)]">Effective Date: </span>
                               <span className="text-[var(--glass-black-dark)] font-medium">
                                 {formatDisplayDate(plan.effective_date)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Ended Medicare Plans Subsection */}
+            {endedMedicarePlans.length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-[var(--glass-black-dark)] mb-4">
+                  Ended Medicare Plans
+                </h3>
+                <div className="space-y-3">
+                  {endedMedicarePlans.map((plan) => {
+                    // Get rate with priority: rate_override > active_rate from medicarePlanRatesMap > linked medicare_child_rate
+                    let rate: number | null = null;
+                    
+                    // First check for rate_override
+                    if (plan.rate_override !== null) {
+                      rate = plan.rate_override;
+                    } else {
+                      // Try to get from medicarePlanRatesMap (uses priority logic)
+                      const planRatesData = medicarePlanRatesMap.get(plan.medicare_plan_id);
+                      if (planRatesData?.activeRate) {
+                        rate = planRatesData.activeRate.rate;
+                      } else {
+                        // Fall back to linked rate (use ?? instead of || to preserve 0 values)
+                        rate = plan.medicare_child_rate?.rate ?? null;
+                      }
+                    }
+
+                    const handlePlanClick = (e: React.MouseEvent) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      
+                      // Navigate to the participant Medicare plan detail page
+                      router.push(`/participants/${participantId}/medicare-plans/${plan.id}`);
+                    };
+
+                    const handleDeleteClick = (e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      setPlanToDelete(plan);
+                    };
+
+                    return (
+                      <div
+                        key={plan.id}
+                        id={`medicare-plan-${plan.id}`}
+                        onClick={handlePlanClick}
+                        className="glass-card rounded-xl p-4 bg-white/5 border border-white/10 opacity-75 transition-colors duration-200 cursor-pointer hover:bg-white/10"
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-[var(--glass-black-dark)] text-lg">
+                              {plan.medicare_plan?.plan_name || 'Unnamed Medicare Plan'}
+                            </h4>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {rate !== null && (
+                              <div className="text-right">
+                                <p className="text-xs text-[var(--glass-gray-medium)] mb-1">Rate</p>
+                                <p className="text-2xl font-bold text-[var(--glass-black-dark)]">
+                                  ${rate.toFixed(2)}
+                                </p>
+                              </div>
+                            )}
+                            {isEditMode && (
+                              <button
+                                type="button"
+                                onClick={handleDeleteClick}
+                                className="flex items-center justify-center w-8 h-8 rounded-full bg-[#C6282B] hover:bg-[#A01F22] text-white font-bold text-xl leading-none transition-colors duration-200 flex-shrink-0 shadow-lg hover:shadow-xl"
+                                title="Delete plan"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          {plan.medicare_plan?.provider && (
+                            <div>
+                              <span className="text-[var(--glass-gray-medium)]">Provider: </span>
+                              <span className="text-[var(--glass-black-dark)] font-medium">
+                                {plan.medicare_plan.provider.name}
+                              </span>
+                            </div>
+                          )}
+                          {plan.effective_date && (
+                            <div>
+                              <span className="text-[var(--glass-gray-medium)]">Effective Date: </span>
+                              <span className="text-[var(--glass-black-dark)] font-medium">
+                                {formatDisplayDate(plan.effective_date)}
+                              </span>
+                            </div>
+                          )}
+                          {plan.termination_date && (
+                            <div>
+                              <span className="text-[var(--glass-gray-medium)]">Termination Date: </span>
+                              <span className="text-[var(--glass-black-dark)] font-medium">
+                                {formatDisplayDate(plan.termination_date)}
                               </span>
                             </div>
                           )}

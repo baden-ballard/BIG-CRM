@@ -13,14 +13,23 @@ interface Participant {
   phone_number: string | null;
 }
 
+interface ActivePlan {
+  id: string;
+  planName: string;
+  providerName: string;
+  planType: 'medicare' | 'group';
+}
+
 interface ParticipantWithBirthday extends Participant {
   birthdayDate: Date;
   daysAgo: number;
+  activePlans: ActivePlan[];
 }
 
 interface ParticipantWithUpcomingBirthday extends Participant {
   birthdayDate: Date;
   daysUntil: number;
+  activePlans: ActivePlan[];
 }
 
 interface ParticipantTurning65 extends Participant {
@@ -51,6 +60,125 @@ export default function Dashboard() {
     fetchDashboardStats();
     fetchGroupParticipantsTurning65();
   }, []);
+
+  const fetchActivePlansForParticipants = async (participantIds: string[]): Promise<Map<string, ActivePlan[]>> => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+    const plansMap = new Map<string, ActivePlan[]>();
+
+    // Initialize map with empty arrays
+    participantIds.forEach(id => plansMap.set(id, []));
+
+    if (participantIds.length === 0) {
+      return plansMap;
+    }
+
+    try {
+      // Batch fetch all active Medicare plans for all participants
+      const { data: medicarePlans, error: medicareError } = await supabase
+        .from('participant_medicare_plans')
+        .select(`
+          participant_id,
+          medicare_plan:medicare_plans (
+            id,
+            plan_name,
+            provider:providers (
+              id,
+              name
+            )
+          ),
+          effective_date
+        `)
+        .in('participant_id', participantIds);
+
+      if (!medicareError && medicarePlans) {
+        medicarePlans.forEach((plan: any) => {
+          const effectiveDate = plan.effective_date ? new Date(plan.effective_date) : null;
+          const isActive = !effectiveDate || effectiveDate <= today;
+          
+          if (isActive && plan.medicare_plan && plan.participant_id) {
+            const medicarePlan = Array.isArray(plan.medicare_plan) 
+              ? plan.medicare_plan[0] 
+              : plan.medicare_plan;
+            
+            if (medicarePlan) {
+              const provider = Array.isArray(medicarePlan.provider) 
+                ? medicarePlan.provider[0] 
+                : medicarePlan.provider;
+              
+              const activePlan: ActivePlan = {
+                id: medicarePlan.id,
+                planName: medicarePlan.plan_name || 'Unknown Plan',
+                providerName: provider?.name || 'Unknown Provider',
+                planType: 'medicare',
+              };
+
+              const existingPlans = plansMap.get(plan.participant_id) || [];
+              plansMap.set(plan.participant_id, [...existingPlans, activePlan]);
+            }
+          }
+        });
+      }
+
+      // Batch fetch all active Group plans for all participants
+      const { data: groupPlans, error: groupError } = await supabase
+        .from('participant_group_plans')
+        .select(`
+          participant_id,
+          group_plan:group_plans (
+            id,
+            plan_name,
+            termination_date,
+            provider:providers (
+              id,
+              name
+            )
+          ),
+          termination_date
+        `)
+        .in('participant_id', participantIds);
+
+      if (!groupError && groupPlans) {
+        groupPlans.forEach((plan: any) => {
+          const participantTerminationDate = plan.termination_date 
+            ? new Date(plan.termination_date)
+            : null;
+          
+          const groupPlan = Array.isArray(plan.group_plan) 
+            ? plan.group_plan[0] 
+            : plan.group_plan;
+          
+          const groupPlanTerminationDate = groupPlan?.termination_date 
+            ? new Date(groupPlan.termination_date)
+            : null;
+          
+          const isActive = (!participantTerminationDate || participantTerminationDate >= today) &&
+                          (!groupPlanTerminationDate || groupPlanTerminationDate >= today);
+          
+          if (isActive && groupPlan && plan.participant_id) {
+            const provider = Array.isArray(groupPlan.provider) 
+              ? groupPlan.provider[0] 
+              : groupPlan.provider;
+            
+            const activePlan: ActivePlan = {
+              id: groupPlan.id,
+              planName: groupPlan.plan_name || 'Unknown Plan',
+              providerName: provider?.name || 'Unknown Provider',
+              planType: 'group',
+            };
+
+            const existingPlans = plansMap.get(plan.participant_id) || [];
+            plansMap.set(plan.participant_id, [...existingPlans, activePlan]);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching active plans:', err);
+    }
+
+    return plansMap;
+  };
 
   const fetchRecentBirthdays = async () => {
     try {
@@ -97,9 +225,11 @@ export default function Dashboard() {
 
       // Filter participants whose birthday occurred in the last 60 days
       const recentBirthdayParticipants: ParticipantWithBirthday[] = [];
+      const participantIdsToFetchPlans: string[] = [];
 
-      participants.forEach((participant) => {
-        if (!participant.dob) return;
+      // First pass: identify participants with recent birthdays
+      for (const participant of participants) {
+        if (!participant.dob) continue;
 
         const dob = new Date(participant.dob);
         const currentYear = today.getFullYear();
@@ -112,24 +242,37 @@ export default function Dashboard() {
         const lastYearBirthday = new Date(currentYear - 1, dob.getMonth(), dob.getDate());
         lastYearBirthday.setHours(0, 0, 0, 0);
 
+        let birthdayDate: Date | null = null;
+        let daysAgo: number | null = null;
+
         // Check if this year's birthday is within the last 60 days
         if (thisYearBirthday <= today && thisYearBirthday >= sixtyDaysAgo) {
-          const daysAgo = Math.floor((today.getTime() - thisYearBirthday.getTime()) / (1000 * 60 * 60 * 24));
-          recentBirthdayParticipants.push({
-            ...participant,
-            birthdayDate: thisYearBirthday,
-            daysAgo,
-          });
+          daysAgo = Math.floor((today.getTime() - thisYearBirthday.getTime()) / (1000 * 60 * 60 * 24));
+          birthdayDate = thisYearBirthday;
         }
         // Check if last year's birthday is within the last 60 days (handles year boundary)
         else if (lastYearBirthday <= today && lastYearBirthday >= sixtyDaysAgo) {
-          const daysAgo = Math.floor((today.getTime() - lastYearBirthday.getTime()) / (1000 * 60 * 60 * 24));
+          daysAgo = Math.floor((today.getTime() - lastYearBirthday.getTime()) / (1000 * 60 * 60 * 24));
+          birthdayDate = lastYearBirthday;
+        }
+
+        if (birthdayDate !== null && daysAgo !== null) {
           recentBirthdayParticipants.push({
             ...participant,
-            birthdayDate: lastYearBirthday,
+            birthdayDate,
             daysAgo,
+            activePlans: [], // Will be populated below
           });
+          participantIdsToFetchPlans.push(participant.id);
         }
+      }
+
+      // Batch fetch all active plans for all participants at once
+      const plansMap = await fetchActivePlansForParticipants(participantIdsToFetchPlans);
+
+      // Map plans to participants
+      recentBirthdayParticipants.forEach(participant => {
+        participant.activePlans = plansMap.get(participant.id) || [];
       });
 
       // Sort by most recent birthday first
@@ -199,9 +342,11 @@ export default function Dashboard() {
 
       // Filter participants whose birthday will occur in the next 60 days
       const upcomingBirthdayParticipants: ParticipantWithUpcomingBirthday[] = [];
+      const participantIdsToFetchPlans: string[] = [];
 
-      participants.forEach((participant) => {
-        if (!participant.dob) return;
+      // First pass: identify participants with upcoming birthdays
+      for (const participant of participants) {
+        if (!participant.dob) continue;
 
         const dob = new Date(participant.dob);
         const currentYear = today.getFullYear();
@@ -214,24 +359,37 @@ export default function Dashboard() {
         const nextYearBirthday = new Date(currentYear + 1, dob.getMonth(), dob.getDate());
         nextYearBirthday.setHours(0, 0, 0, 0);
 
+        let birthdayDate: Date | null = null;
+        let daysUntil: number | null = null;
+
         // Check if this year's birthday is within the next 60 days
         if (thisYearBirthday > today && thisYearBirthday <= sixtyDaysFromNow) {
-          const daysUntil = Math.floor((thisYearBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          upcomingBirthdayParticipants.push({
-            ...participant,
-            birthdayDate: thisYearBirthday,
-            daysUntil,
-          });
+          daysUntil = Math.floor((thisYearBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          birthdayDate = thisYearBirthday;
         }
         // Check if next year's birthday is within the next 60 days (handles year boundary)
         else if (nextYearBirthday > today && nextYearBirthday <= sixtyDaysFromNow) {
-          const daysUntil = Math.floor((nextYearBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          daysUntil = Math.floor((nextYearBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          birthdayDate = nextYearBirthday;
+        }
+
+        if (birthdayDate !== null && daysUntil !== null) {
           upcomingBirthdayParticipants.push({
             ...participant,
-            birthdayDate: nextYearBirthday,
+            birthdayDate,
             daysUntil,
+            activePlans: [], // Will be populated below
           });
+          participantIdsToFetchPlans.push(participant.id);
         }
+      }
+
+      // Batch fetch all active plans for all participants at once
+      const plansMap = await fetchActivePlansForParticipants(participantIdsToFetchPlans);
+
+      // Map plans to participants
+      upcomingBirthdayParticipants.forEach(participant => {
+        participant.activePlans = plansMap.get(participant.id) || [];
       });
 
       // Sort by soonest birthday first
@@ -562,6 +720,21 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
+                    {participant.activePlans && participant.activePlans.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-white/10">
+                        <span className="text-xs text-[var(--glass-gray-medium)] font-medium">Active Plans: </span>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {participant.activePlans.map((plan) => (
+                            <span
+                              key={plan.id}
+                              className="inline-flex items-center px-2 py-1 rounded text-xs bg-white/10 text-[var(--glass-black-dark)] border border-white/20"
+                            >
+                              {plan.planName} ({plan.providerName})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -625,6 +798,21 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
+                    {participant.activePlans && participant.activePlans.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-white/10">
+                        <span className="text-xs text-[var(--glass-gray-medium)] font-medium">Active Plans: </span>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {participant.activePlans.map((plan) => (
+                            <span
+                              key={plan.id}
+                              className="inline-flex items-center px-2 py-1 rounded text-xs bg-white/10 text-[var(--glass-black-dark)] border border-white/20"
+                            >
+                              {plan.planName} ({plan.providerName})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
