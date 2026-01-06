@@ -65,3 +65,4 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 
 **Note:** Your actual values will be different. Never commit `.env.local` to git (it's already in `.gitignore`).
 
+

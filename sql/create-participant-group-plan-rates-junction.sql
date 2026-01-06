@@ -20,3 +20,4 @@ COMMENT ON COLUMN participant_group_plan_rates.participant_group_plan_id IS 'Ref
 COMMENT ON COLUMN participant_group_plan_rates.group_option_rate_id IS 'Reference to the group_option_rates record';
 COMMENT ON COLUMN participant_group_plan_rates.created_at IS 'When this rate was connected to the participant plan (for history tracking)';
 
+

@@ -73,3 +73,4 @@ The anon/public key should:
 3. Try copying the key again from Supabase Dashboard
 4. Check the browser console for the exact error message
 
+

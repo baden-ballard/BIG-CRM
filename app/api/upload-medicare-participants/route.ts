@@ -327,13 +327,15 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if participant exists (by name and DOB)
-        // Note: If a participant appears multiple times in the CSV, they will be created once
-        // on the first occurrence, and subsequent rows will use the existing participant.
-        // Each row will then create its own plan assignment.
+        // Normalize participant name for comparison (trim and normalize whitespace)
+        // Note: If a participant appears multiple times in the CSV with different plans,
+        // they will be created once on the first occurrence, and subsequent rows will use
+        // the existing participant. Each different plan will be added to the same participant.
+        const normalizedParticipantName = row.participant.trim().replace(/\s+/g, ' ');
         const { data: existingParticipants, error: participantError } = await supabase
           .from('participants')
           .select('id')
-          .eq('client_name', row.participant.trim())
+          .eq('client_name', normalizedParticipantName)
           .eq('dob', dob);
 
         if (participantError) {
@@ -360,11 +362,11 @@ export async function POST(request: NextRequest) {
               .eq('id', participantId);
           }
 
-          details.push(`Row ${rowNum}: Using existing participant "${row.participant}"`);
+          details.push(`Row ${rowNum}: Using existing participant "${normalizedParticipantName}"`);
         } else {
           // Create new participant (first occurrence in CSV or new to database)
           const insertData: any = {
-            client_name: row.participant.trim(),
+            client_name: normalizedParticipantName,
             dob: dob,
             // Medicare participants don't belong to a group
             group_id: null,
@@ -386,7 +388,7 @@ export async function POST(request: NextRequest) {
           }
 
           participantId = newParticipant.id;
-          details.push(`Row ${rowNum}: Created new participant "${row.participant}"`);
+          details.push(`Row ${rowNum}: Created new participant "${normalizedParticipantName}"`);
         }
 
         // Find provider by name
@@ -475,10 +477,28 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // Check if this participant already has this specific plan assignment
+        // This prevents duplicate plan assignments while allowing multiple different plans
+        const { data: existingPlanAssignments, error: checkError } = await supabase
+          .from('participant_medicare_plans')
+          .select('id')
+          .eq('participant_id', participantId)
+          .eq('medicare_plan_id', medicarePlanId);
+
+        if (checkError) {
+          throw checkError;
+        }
+
+        // If participant already has this plan, skip it (don't create duplicate)
+        if (existingPlanAssignments && existingPlanAssignments.length > 0) {
+          details.push(`Row ${rowNum}: Participant "${normalizedParticipantName}" already has Medicare plan "${row.planName}" from ${row.provider} - skipping duplicate`);
+          // Don't count this as an error, just skip it
+          continue;
+        }
+
         // Create participant_medicare_plans record
-        // Note: If the same participant appears multiple times with different plans,
-        // each plan assignment will be created. If the same plan is assigned twice,
-        // the database constraint will catch it and we'll report it as an error.
+        // If the same participant appears multiple times with different plans,
+        // each different plan assignment will be created. Same plans are skipped above.
         const participantMedicarePlanData: any = {
           participant_id: participantId,
           medicare_plan_id: medicarePlanId,
@@ -493,9 +513,9 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (pmpError) {
-          // Check if it's a duplicate error (same participant + same plan already exists)
+          // This should rarely happen now since we check above, but keep as safety net
           if (pmpError.code === '23505') {
-            details.push(`Row ${rowNum}: Participant "${row.participant}" already has this Medicare plan assignment (${row.planName} from ${row.provider})`);
+            details.push(`Row ${rowNum}: Participant "${normalizedParticipantName}" already has this Medicare plan assignment (${row.planName} from ${row.provider})`);
             errors++;
             continue;
           }
@@ -503,7 +523,18 @@ export async function POST(request: NextRequest) {
         }
 
         processed++;
-        details.push(`Row ${rowNum}: Successfully created Medicare plan assignment for "${row.participant}"`);
+        // Check if this participant has other plans to provide better context
+        const { data: allParticipantPlans } = await supabase
+          .from('participant_medicare_plans')
+          .select('id')
+          .eq('participant_id', participantId);
+        
+        const planCount = allParticipantPlans?.length || 0;
+        if (planCount > 1) {
+          details.push(`Row ${rowNum}: Successfully added Medicare plan "${row.planName}" from ${row.provider} to participant "${normalizedParticipantName}" (participant now has ${planCount} plan(s))`);
+        } else {
+          details.push(`Row ${rowNum}: Successfully created Medicare plan assignment for "${normalizedParticipantName}"`);
+        }
 
       } catch (error: any) {
         console.error(`Error processing row ${rowNum}:`, error);

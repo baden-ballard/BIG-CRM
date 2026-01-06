@@ -9,3 +9,4 @@ ADD COLUMN IF NOT EXISTS number_of_children INTEGER DEFAULT 0;
 COMMENT ON COLUMN participants.number_of_spouses IS 'Number of spouses (count only, not individual records)';
 COMMENT ON COLUMN participants.number_of_children IS 'Number of children (count only, not individual records)';
 
+

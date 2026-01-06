@@ -43,3 +43,4 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 
 **Note:** The values are the same, you just need both sets with different names.
 
+

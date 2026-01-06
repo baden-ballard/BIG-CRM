@@ -18,3 +18,4 @@ COMMENT ON COLUMN participant_group_plan_rates.end_date IS 'End date for this co
 CREATE INDEX IF NOT EXISTS idx_pgpr_start_date ON participant_group_plan_rates(start_date);
 CREATE INDEX IF NOT EXISTS idx_pgpr_end_date ON participant_group_plan_rates(end_date);
 
+

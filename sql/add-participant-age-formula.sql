@@ -27,3 +27,4 @@ GRANT SELECT ON participants_with_age TO anon;
 -- Add comment to document the age field
 COMMENT ON FUNCTION calculate_age(DATE) IS 'Calculates age in years from date of birth based on current date';
 
+
