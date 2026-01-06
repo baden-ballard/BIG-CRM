@@ -8,6 +8,9 @@ import AppLayout from '../components/AppLayout';
 export const metadata: Metadata = {
   title: 'BIG CRM - Sales Pipeline & Account Management',
   description: 'Simple CRM for managing groups, participants, programs, and providers',
+  icons: {
+    icon: '/icon.png',
+  },
 };
 
 const navItems = [
