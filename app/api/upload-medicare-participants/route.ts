@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '../../../lib/supabase';
+import { createServerSupabaseClient } from '../../../lib/supabase-server';
 import * as XLSX from 'xlsx';
 
 interface CSVRow {
@@ -260,6 +260,9 @@ function normalizeDate(dateStr: string): string | null {
 
 export async function POST(request: NextRequest) {
   try {
+    // Create server-side Supabase client
+    const supabase = await createServerSupabaseClient();
+    
     const formData = await request.formData();
     const file = formData.get('file') as File;
 

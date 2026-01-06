@@ -175,7 +175,17 @@ export default function UploadMedicareParticipantsPage() {
         body: formData,
       });
 
-      const result = await response.json();
+      // Check content type before parsing JSON
+      const contentType = response.headers.get('content-type');
+      let result: any;
+      
+      if (contentType && contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        // If not JSON, read as text to get the error message
+        const text = await response.text();
+        throw new Error(text || `Server error: ${response.status} ${response.statusText}`);
+      }
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to upload Medicare participants');
