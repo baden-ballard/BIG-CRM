@@ -1411,7 +1411,17 @@ export default function ParticipantDetailPage() {
         .eq('participant_id_1', participantId);
 
       if (deleteRelationshipsError1) {
-        console.error('Error deleting participant relationships (id_1):', deleteRelationshipsError1);
+        // Check if error is due to missing table - this is fine, just skip silently
+        if (deleteRelationshipsError1.code === 'PGRST205' || deleteRelationshipsError1.message?.includes('Could not find the table')) {
+          // Table doesn't exist yet - this is fine, just continue
+        } else {
+          // Log other errors with meaningful content
+          console.error('Error deleting participant relationships (id_1):', {
+            message: deleteRelationshipsError1.message || 'Unknown error',
+            code: deleteRelationshipsError1.code || null,
+            details: deleteRelationshipsError1
+          });
+        }
         // Continue with deletion even if this fails
       }
 
@@ -1421,7 +1431,17 @@ export default function ParticipantDetailPage() {
         .eq('participant_id_2', participantId);
 
       if (deleteRelationshipsError2) {
-        console.error('Error deleting participant relationships (id_2):', deleteRelationshipsError2);
+        // Check if error is due to missing table - this is fine, just skip silently
+        if (deleteRelationshipsError2.code === 'PGRST205' || deleteRelationshipsError2.message?.includes('Could not find the table')) {
+          // Table doesn't exist yet - this is fine, just continue
+        } else {
+          // Log other errors with meaningful content
+          console.error('Error deleting participant relationships (id_2):', {
+            message: deleteRelationshipsError2.message || 'Unknown error',
+            code: deleteRelationshipsError2.code || null,
+            details: deleteRelationshipsError2
+          });
+        }
         // Continue with deletion even if this fails
       }
 
@@ -2272,8 +2292,12 @@ export default function ParticipantDetailPage() {
     try {
       setIsDeletingPlan(true);
 
+      // Check if it's a Medicare plan or group plan
+      const isMedicarePlan = 'medicare_plan_id' in planToDelete;
+      const tableName = isMedicarePlan ? 'participant_medicare_plans' : 'participant_group_plans';
+
       const { error: deleteError } = await supabase
-        .from('participant_group_plans')
+        .from(tableName)
         .delete()
         .eq('id', planToDelete.id);
 
@@ -2281,8 +2305,12 @@ export default function ParticipantDetailPage() {
         throw deleteError;
       }
 
-      // Refresh plans
-      await fetchPlans();
+      // Refresh the appropriate plans
+      if (isMedicarePlan) {
+        await fetchMedicarePlans();
+      } else {
+        await fetchPlans();
+      }
 
       // Close dialog
       setPlanToDelete(null);

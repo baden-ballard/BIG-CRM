@@ -410,25 +410,29 @@ export async function POST(request: NextRequest) {
 
         const providerId = providers[0].id;
 
-        // Find matching Medicare plan by provider and plan name
-        const { data: medicarePlans, error: planError } = await supabase
+        // Find matching Medicare plan by provider and plan name (case-insensitive)
+        const { data: allMedicarePlans, error: planError } = await supabase
           .from('medicare_plans')
           .select('id, plan_name, provider_id')
-          .eq('provider_id', providerId)
-          .eq('plan_name', row.planName.trim())
-          .limit(1);
+          .eq('provider_id', providerId);
 
         if (planError) {
           throw planError;
         }
 
-        if (!medicarePlans || medicarePlans.length === 0) {
+        // Find plan with case-insensitive name matching
+        const planNameToFind = row.planName.trim();
+        const medicarePlan = allMedicarePlans?.find(
+          plan => plan.plan_name.trim().toLowerCase() === planNameToFind.toLowerCase()
+        );
+
+        if (!medicarePlan) {
           details.push(`Row ${rowNum}: Medicare plan "${row.planName}" not found for provider "${row.provider}"`);
           errors++;
           continue;
         }
 
-        const medicarePlanId = medicarePlans[0].id;
+        const medicarePlanId = medicarePlan.id;
 
         // Find Rate History record matching the rate
         const rateValue = parseFloat(row.rate.trim());
