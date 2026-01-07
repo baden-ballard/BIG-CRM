@@ -145,16 +145,10 @@ function NewParticipantPageContent() {
         return;
       }
 
-      // Validate phone number and email address when not coming from a group page
+      // Validate phone number when not coming from a group page
       if (!groupId) {
         if (!formData.phone_number || formData.phone_number.trim() === '') {
           alert('Please enter a phone number. Phone Number is required.');
-          setIsSubmitting(false);
-          return;
-        }
-
-        if (!formData.email_address || formData.email_address.trim() === '') {
-          alert('Please enter an email address. Email Address is required.');
           setIsSubmitting(false);
           return;
         }
@@ -342,7 +336,7 @@ function NewParticipantPageContent() {
               {/* Email Address */}
               <div>
                 <label htmlFor="email_address" className="block text-sm font-semibold text-[var(--glass-black-dark)] mb-2">
-                  Email Address {!groupId && '*'}
+                  Email Address
                 </label>
                 <input
                   type="email"
@@ -350,7 +344,6 @@ function NewParticipantPageContent() {
                   name="email_address"
                   value={formData.email_address}
                   onChange={handleChange}
-                  required={!groupId}
                   className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
                   placeholder="Enter email address"
                 />
