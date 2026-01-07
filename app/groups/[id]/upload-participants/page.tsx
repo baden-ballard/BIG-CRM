@@ -262,10 +262,43 @@ export default function UploadParticipantsPage() {
                 {uploadStatus.message}
               </p>
               {uploadStatus.details && uploadStatus.details.length > 0 && (
-                <ul className="mt-2 text-sm text-[var(--glass-gray-medium)] list-disc list-inside">
-                  {uploadStatus.details.map((detail, index) => (
-                    <li key={index}>{detail}</li>
-                  ))}
+                <ul className="mt-2 text-sm list-disc list-inside space-y-1">
+                  {uploadStatus.details
+                    .filter((detail) => {
+                      // Filter out blank row messages (rows that were skipped silently)
+                      // Blank rows don't generate messages, but we check just in case
+                      const lowerDetail = detail.toLowerCase();
+                      return !lowerDetail.includes('blank row') && 
+                             !lowerDetail.includes('empty row') &&
+                             !lowerDetail.includes('skipped empty');
+                    })
+                    .map((detail, index) => {
+                      // Determine if this is an error message
+                      const lowerDetail = detail.toLowerCase();
+                      const isError = 
+                        lowerDetail.includes('missing') ||
+                        lowerDetail.includes('invalid') ||
+                        lowerDetail.includes('error') ||
+                        lowerDetail.includes('not found') ||
+                        lowerDetail.includes('already exists') ||
+                        lowerDetail.includes('already has') ||
+                        lowerDetail.includes('failed') ||
+                        lowerDetail.includes('could not') ||
+                        lowerDetail.includes('no matching') ||
+                        lowerDetail.includes('no rates found') ||
+                        lowerDetail.includes('no active rate found') ||
+                        lowerDetail.includes("doesn't have") ||
+                        lowerDetail.includes('but failed to');
+                      
+                      return (
+                        <li 
+                          key={index}
+                          className={isError ? 'text-red-600 font-medium' : 'text-green-700'}
+                        >
+                          {detail}
+                        </li>
+                      );
+                    })}
                 </ul>
               )}
             </div>

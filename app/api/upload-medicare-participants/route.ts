@@ -63,11 +63,11 @@ function parseCSV(csvText: string): CSVRow[] {
   });
   
   // Expected headers (case-insensitive, normalized)
-  const expectedHeaders = [
+  // Required headers
+  const requiredHeaders = [
     'participant',
     'date of birth',
     'phone number',
-    'email address',
     'address',
     'id number',
     'plan start date',
@@ -76,6 +76,13 @@ function parseCSV(csvText: string): CSVRow[] {
     'rate',
     'age banded plan name'
   ];
+  
+  // Optional headers
+  const optionalHeaders = [
+    'email address'
+  ];
+  
+  const allExpectedHeaders = [...requiredHeaders, ...optionalHeaders];
 
   // Helper function to normalize header for comparison
   const normalizeHeader = (header: string): string => {
@@ -84,7 +91,7 @@ function parseCSV(csvText: string): CSVRow[] {
 
   // Map headers to indices
   const headerMap: Record<string, number> = {};
-  expectedHeaders.forEach(expected => {
+  allExpectedHeaders.forEach(expected => {
     const normalizedExpected = normalizeHeader(expected);
     const index = headers.findIndex(h => {
       const normalizedH = normalizeHeader(String(h || ''));
@@ -92,19 +99,25 @@ function parseCSV(csvText: string): CSVRow[] {
       return normalizedH === normalizedExpected || 
              normalizedH.replace(/\s+/g, '') === normalizedExpected.replace(/\s+/g, '');
     });
-    if (index === -1) {
+    if (index !== -1) {
+      headerMap[expected] = index;
+    }
+  });
+  
+  // Validate required headers
+  requiredHeaders.forEach(expected => {
+    if (headerMap[expected] === undefined) {
       // Provide helpful error message with actual headers found
       const foundHeaders = rawHeaders.map((h, i) => `"${h}"`).join(', ');
       throw new Error(`Missing required column: "${expected}". Found headers: ${foundHeaders}`);
     }
-    headerMap[expected] = index;
   });
 
   // Parse data rows
   const rows: CSVRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''));
-    if (values.length < expectedHeaders.length) {
+    if (values.length < requiredHeaders.length) {
       continue; // Skip incomplete rows
     }
 
@@ -112,7 +125,7 @@ function parseCSV(csvText: string): CSVRow[] {
       participant: values[headerMap['participant']] || '',
       dateOfBirth: values[headerMap['date of birth']] || '',
       phoneNumber: values[headerMap['phone number']] || '',
-      emailAddress: values[headerMap['email address']] || '',
+      emailAddress: headerMap['email address'] !== undefined ? (values[headerMap['email address']] || '') : '',
       address: values[headerMap['address']] || '',
       idNumber: values[headerMap['id number']] || '',
       planStartDate: values[headerMap['plan start date']] || '',
@@ -146,11 +159,11 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
   });
   
   // Expected headers (case-insensitive, normalized)
-  const expectedHeaders = [
+  // Required headers
+  const requiredHeaders = [
     'participant',
     'date of birth',
     'phone number',
-    'email address',
     'address',
     'id number',
     'plan start date',
@@ -159,6 +172,13 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
     'rate',
     'age banded plan name'
   ];
+  
+  // Optional headers
+  const optionalHeaders = [
+    'email address'
+  ];
+  
+  const allExpectedHeaders = [...requiredHeaders, ...optionalHeaders];
 
   // Helper function to normalize header for comparison
   const normalizeHeader = (header: string): string => {
@@ -167,7 +187,7 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
 
   // Map headers to indices
   const headerMap: Record<string, number> = {};
-  expectedHeaders.forEach(expected => {
+  allExpectedHeaders.forEach(expected => {
     const normalizedExpected = normalizeHeader(expected);
     const index = headers.findIndex(h => {
       const normalizedH = normalizeHeader(String(h || ''));
@@ -175,19 +195,29 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
       return normalizedH === normalizedExpected || 
              normalizedH.replace(/\s+/g, '') === normalizedExpected.replace(/\s+/g, '');
     });
-    if (index === -1) {
+    if (index !== -1) {
+      headerMap[expected] = index;
+    }
+  });
+  
+  // Validate required headers
+  requiredHeaders.forEach(expected => {
+    if (headerMap[expected] === undefined) {
       // Provide helpful error message with actual headers found
       const foundHeaders = headers.map((h, i) => `"${data[0][i]}"`).join(', ');
       throw new Error(`Missing required column: "${expected}". Found headers: ${foundHeaders}`);
     }
-    headerMap[expected] = index;
   });
 
   // Parse data rows
   const rows: CSVRow[] = [];
   for (let i = 1; i < data.length; i++) {
-    const values = data[i].map((v: any) => String(v || '').trim());
-    if (values.length < expectedHeaders.length) {
+    const values = data[i].map((v: any) => {
+      // Preserve 0 values - only use '' for null/undefined
+      if (v == null) return '';
+      return String(v).trim();
+    });
+    if (values.length < requiredHeaders.length) {
       continue; // Skip incomplete rows
     }
 
@@ -195,13 +225,13 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
       participant: values[headerMap['participant']] || '',
       dateOfBirth: values[headerMap['date of birth']] || '',
       phoneNumber: values[headerMap['phone number']] || '',
-      emailAddress: values[headerMap['email address']] || '',
+      emailAddress: headerMap['email address'] !== undefined ? (values[headerMap['email address']] || '') : '',
       address: values[headerMap['address']] || '',
       idNumber: values[headerMap['id number']] || '',
       planStartDate: values[headerMap['plan start date']] || '',
       provider: values[headerMap['provider']] || '',
       planName: values[headerMap['plan name']] || '',
-      rate: values[headerMap['rate']] || '',
+      rate: values[headerMap['rate']] ?? '',
       ageBandedPlanName: values[headerMap['age banded plan name']] || '',
     });
   }
@@ -322,14 +352,16 @@ export async function POST(request: NextRequest) {
         
         // For Custom Age Banded Plan, require ageBandedPlanName and rate
         // For regular plans, require rate
+        // Allow 0 rates but reject blank/null/undefined
+        const isRateMissing = row.rate == null || String(row.rate).trim() === '';
         if (isCustomAgeBandedPlan) {
-          if (!row.ageBandedPlanName || !row.rate) {
+          if (!row.ageBandedPlanName || isRateMissing) {
             details.push(`Row ${rowNum}: Missing required fields for Custom Age Banded Plan (Age Banded Plan Name and Rate)`);
             errors++;
             continue;
           }
         } else {
-          if (!row.rate) {
+          if (isRateMissing) {
             details.push(`Row ${rowNum}: Missing required field (Rate)`);
             errors++;
             continue;

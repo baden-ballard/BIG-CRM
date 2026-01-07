@@ -925,7 +925,9 @@ export default function ViewGroupPlanPage() {
         const option = String(row[optionIndex] || '').trim();
         const rateValue = row[rateIndex];
 
-        if (!option || rateValue === undefined || rateValue === null || rateValue === '') {
+        // Allow 0 rates but skip rows with missing option or rate
+        // Check explicitly for null/undefined/empty string, but allow 0
+        if (!option || rateValue === undefined || rateValue === null || (typeof rateValue === 'string' && rateValue.trim() === '')) {
           continue; // Skip empty rows
         }
 
@@ -1048,7 +1050,9 @@ export default function ViewGroupPlanPage() {
         const option = values[optionIndex];
         const rateStr = values[rateIndex];
 
-        if (!option || !rateStr) {
+        // Allow 0 rates but skip rows with missing option or rate
+        // Check explicitly for empty string, but allow "0"
+        if (!option || rateStr === undefined || rateStr === null || rateStr === '') {
           continue; // Skip empty rows
         }
 

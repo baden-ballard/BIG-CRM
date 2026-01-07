@@ -222,7 +222,11 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
   // Parse data rows
   const rows: CSVRow[] = [];
   for (let i = 1; i < data.length; i++) {
-    const values = data[i].map((v: any) => String(v || '').trim());
+    const values = data[i].map((v: any) => {
+      // Preserve 0 values - only use '' for null/undefined
+      if (v == null) return '';
+      return String(v).trim();
+    });
     
     // Get participant DOB - try both column names
     const participantDOB = values[headerMap['date of birth (participant)']] || 
@@ -239,7 +243,7 @@ function parseExcel(buffer: ArrayBuffer): CSVRow[] {
       class: values[headerMap['class']] || '',
       planName: values[headerMap['plan name']] || '',
       option: values[headerMap['option']] || '',
-      rate: values[headerMap['rate']] || '',
+      rate: values[headerMap['rate']] ?? '',
       dependentName: values[headerMap['name (dependent)']] || '',
       dependentRelationship: values[headerMap['relationship to partcipant']] || '',
       dependentDateOfBirth: values[headerMap['date of birth (dependant)']] || '',
@@ -752,7 +756,9 @@ export async function POST(request: NextRequest) {
 
         // Process as participant row
         // Validate required fields for participant rows
-        if (!row.participant || !row.dateOfBirth || !row.planName || !row.option || !row.rate) {
+        // Allow 0 rates but reject blank/null/undefined
+        const isRateMissing = row.rate == null || String(row.rate).trim() === '';
+        if (!row.participant || !row.dateOfBirth || !row.planName || !row.option || isRateMissing) {
           details.push(`Row ${rowNum}: Missing required fields (Participant, Date of Birth, Plan Name, Option, or Rate)`);
           errors++;
           continue;

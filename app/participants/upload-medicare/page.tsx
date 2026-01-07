@@ -70,12 +70,11 @@ export default function UploadMedicareParticipantsPage() {
     // Parse header row
     const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/^"|"$/g, ''));
     
-    // Expected headers (case-insensitive)
-    const expectedHeaders = [
+    // Required headers (case-insensitive)
+    const requiredHeaders = [
       'participant',
       'date of birth',
       'phone number',
-      'email address',
       'address',
       'id number',
       'plan start date',
@@ -83,26 +82,39 @@ export default function UploadMedicareParticipantsPage() {
       'plan name',
       'rate'
     ];
+    
+    // Optional headers
+    const optionalHeaders = [
+      'email address'
+    ];
+    
+    const allExpectedHeaders = [...requiredHeaders, ...optionalHeaders];
 
     // Map headers to indices
     const headerMap: Record<string, number> = {};
-    expectedHeaders.forEach(expected => {
+    allExpectedHeaders.forEach(expected => {
       const index = headers.findIndex(h => {
         const normalizedH = h.replace(/^"|"$/g, '').trim();
         return normalizedH === expected || normalizedH === expected.replace(/\s+/g, '');
       });
       
-      if (index === -1) {
+      if (index !== -1) {
+        headerMap[expected] = index;
+      }
+    });
+    
+    // Validate required headers
+    requiredHeaders.forEach(expected => {
+      if (headerMap[expected] === undefined) {
         throw new Error(`Missing required column: ${expected}`);
       }
-      headerMap[expected] = index;
     });
 
     // Parse data rows
     const rows: CSVRow[] = [];
     for (let i = 1; i < lines.length; i++) {
       const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, ''));
-      if (values.length < expectedHeaders.length) {
+      if (values.length < requiredHeaders.length) {
         continue; // Skip incomplete rows
       }
 
@@ -110,7 +122,7 @@ export default function UploadMedicareParticipantsPage() {
         participant: values[headerMap['participant']] || '',
         dateOfBirth: values[headerMap['date of birth']] || '',
         phoneNumber: values[headerMap['phone number']] || '',
-        emailAddress: values[headerMap['email address']] || '',
+        emailAddress: headerMap['email address'] !== undefined ? (values[headerMap['email address']] || '') : '',
         address: values[headerMap['address']] || '',
         idNumber: values[headerMap['id number']] || '',
         planStartDate: values[headerMap['plan start date']] || '',
@@ -247,7 +259,7 @@ export default function UploadMedicareParticipantsPage() {
               className="glass-input-enhanced w-full px-4 py-3 rounded-xl"
             />
             <p className="text-xs text-[var(--glass-gray-medium)] mt-2">
-              File must include columns: Participant, Date of Birth, Phone Number, Email Address, Address, ID Number, Plan Start Date, Provider, Plan Name, Rate
+              File must include columns: Participant, Date of Birth, Phone Number, Address, ID Number, Plan Start Date, Provider, Plan Name, Rate. Email Address is optional.
             </p>
           </div>
 
@@ -264,10 +276,43 @@ export default function UploadMedicareParticipantsPage() {
                 {uploadStatus.message}
               </p>
               {uploadStatus.details && uploadStatus.details.length > 0 && (
-                <ul className="mt-2 text-sm text-[var(--glass-gray-medium)] list-disc list-inside">
-                  {uploadStatus.details.map((detail, index) => (
-                    <li key={index}>{detail}</li>
-                  ))}
+                <ul className="mt-2 text-sm list-disc list-inside space-y-1">
+                  {uploadStatus.details
+                    .filter((detail) => {
+                      // Filter out blank row messages (rows that were skipped silently)
+                      // Blank rows don't generate messages, but we check just in case
+                      const lowerDetail = detail.toLowerCase();
+                      return !lowerDetail.includes('blank row') && 
+                             !lowerDetail.includes('empty row') &&
+                             !lowerDetail.includes('skipped empty');
+                    })
+                    .map((detail, index) => {
+                      // Determine if this is an error message
+                      const lowerDetail = detail.toLowerCase();
+                      const isError = 
+                        lowerDetail.includes('missing') ||
+                        lowerDetail.includes('invalid') ||
+                        lowerDetail.includes('error') ||
+                        lowerDetail.includes('not found') ||
+                        lowerDetail.includes('already exists') ||
+                        lowerDetail.includes('already has') ||
+                        lowerDetail.includes('failed') ||
+                        lowerDetail.includes('could not') ||
+                        lowerDetail.includes('no matching') ||
+                        lowerDetail.includes('no rates found') ||
+                        lowerDetail.includes('no active rate found') ||
+                        lowerDetail.includes("doesn't have") ||
+                        lowerDetail.includes('but failed to');
+                      
+                      return (
+                        <li 
+                          key={index}
+                          className={isError ? 'text-red-600 font-medium' : 'text-green-700'}
+                        >
+                          {detail}
+                        </li>
+                      );
+                    })}
                 </ul>
               )}
             </div>

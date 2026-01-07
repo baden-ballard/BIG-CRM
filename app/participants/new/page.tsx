@@ -233,12 +233,8 @@ function NewParticipantPageContent() {
         }
       }
       
-      // Redirect based on whether we came from a group page
-      if (groupId) {
-        router.push(`/groups/${groupId}`);
-      } else {
-        router.push('/participants');
-      }
+      // Redirect to the view participant page for the newly created participant
+      router.push(`/participants/${data.id}`);
     } catch (error) {
       console.error('Error creating participant:', error);
       alert('Failed to create participant. Please try again.');
