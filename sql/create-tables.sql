@@ -158,3 +158,4 @@ CREATE POLICY "Allow all operations for authenticated users" ON notes
 
 
 
+

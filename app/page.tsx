@@ -231,7 +231,8 @@ export default function Dashboard() {
       for (const participant of participants) {
         if (!participant.dob) continue;
 
-        const dob = new Date(participant.dob);
+        // Parse date string without timezone conversion
+        const dob = parseDateString(participant.dob);
         const currentYear = today.getFullYear();
         
         // Create birthday date for this year
@@ -287,8 +288,20 @@ export default function Dashboard() {
     }
   };
 
+  // Parse date string (YYYY-MM-DD) without timezone conversion
+  const parseDateString = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  // Format date without timezone conversion - uses the date components directly
   const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    const month = monthNames[date.getMonth()];
+    const day = date.getDate();
+    const year = date.getFullYear();
+    return `${month} ${day}, ${year}`;
   };
 
   const getDaysAgoText = (daysAgo: number) => {
@@ -348,7 +361,8 @@ export default function Dashboard() {
       for (const participant of participants) {
         if (!participant.dob) continue;
 
-        const dob = new Date(participant.dob);
+        // Parse date string without timezone conversion
+        const dob = parseDateString(participant.dob);
         const currentYear = today.getFullYear();
         
         // Create birthday date for this year
@@ -471,7 +485,8 @@ export default function Dashboard() {
 
         if (!participant.dob) return;
 
-        const dob = new Date(participant.dob);
+        // Parse date string without timezone conversion
+        const dob = parseDateString(participant.dob);
         
         // Calculate 65th birthday
         const turning65Date = new Date(dob.getFullYear() + 65, dob.getMonth(), dob.getDate());
